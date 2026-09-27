@@ -41,7 +41,7 @@ Make sure Docker is **running** before you continue.
 ### 2. Start Kanforge
 
 ```bash
-git clone <this-repo-url> kanforge
+git clone git@github.com:Fern135/KanForge.git kanforge
 cd kanforge
 ```
 
