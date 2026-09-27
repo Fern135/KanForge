@@ -1,0 +1,186 @@
+name: ${COMPOSE_PROJECT_NAME:-kanforge}
+
+# Shared hardening: no privilege escalation, every Linux capability dropped.
+x-hardened: &hardened
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-api-env: &api-env
+  NODE_ENV: production
+  MONGO_URI: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGO_APP_DB}?authSource=${MONGO_APP_DB}
+  REDIS_URL: redis://app:${REDIS_PASSWORD}@redis:6379/0
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+  ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-600}
+  REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-7}
+  APP_ORIGIN: ${APP_ORIGIN}
+  COOKIE_SECURE: "true"
+  TRUST_PROXY: "1"
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+services:
+  mongo:
+    <<: *hardened
+    image: mongo:8.2
+    user: "999:999"
+    command: ["mongod", "--auth", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.5"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_APP_DB}
+      MONGO_APP_DB: ${MONGO_APP_DB}
+      MONGO_APP_USER: ${MONGO_APP_USER}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
+      MONGO_MIGRATE_USER: ${MONGO_MIGRATE_USER}
+      MONGO_MIGRATE_PASSWORD: ${MONGO_MIGRATE_PASSWORD}
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+      - ./docker/mongo/init-users.js:/docker-entrypoint-initdb.d/init-users.js:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    <<: *hardened
+    image: redis:7.4-alpine
+    user: "999:1000"
+    # ACL: the default user is disabled. The "app" user can run everything
+    # except dangerous commands (FLUSHALL, CONFIG, KEYS, DEBUG, ...).
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - volatile-lru
+      - --user
+      - default
+      - "off"
+      - --user
+      - app
+      - "on"
+      - ">${REDIS_PASSWORD}"
+      - "~*"
+      - "&*"
+      - "+@all"
+      - "-@dangerous"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning --user app --pass \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # Runs pending migrations, then exits. The API waits for it to succeed.
+  migrate:
+    <<: *hardened
+    restart: "no"
+    build:
+      context: ./backend
+      target: runtime
+    image: kanforge-api:latest
+    read_only: true
+    environment:
+      <<: *api-env
+      MONGO_URI: mongodb://${MONGO_MIGRATE_USER}:${MONGO_MIGRATE_PASSWORD}@mongo:27017/${MONGO_APP_DB}?authSource=${MONGO_APP_DB}
+    entrypoint: ["node", "node_modules/migrate-mongo/bin/migrate-mongo.js"]
+    command: ["up", "-f", "migrate-mongo-config.js"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks: [backend]
+
+  api:
+    <<: *hardened
+    image: kanforge-api:latest
+    build:
+      context: ./backend
+      target: runtime
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    environment: *api-env
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks: [backend, edge]
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  web:
+    <<: *hardened
+    image: kanforge-web:latest
+    build:
+      context: ./frontend
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+      - /etc/nginx/conf.d:size=1m,uid=101,gid=101
+    environment:
+      PUBLIC_HTTPS_PORT: ${HTTPS_PORT:-8443}
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+      - "${HTTPS_PORT:-8443}:8443"
+    volumes:
+      - ./docker/nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [edge]
+
+  # Integration test runner (`make test`). It uses an isolated *_test database
+  # and Redis DB 1, so it never touches app data.
+  api-test:
+    profiles: ["test"]
+    build:
+      context: ./backend
+      target: dev
+    image: kanforge-api:dev
+    environment:
+      <<: *api-env
+      NODE_ENV: test
+      MONGO_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_APP_DB}_test?authSource=admin
+      REDIS_URL: redis://app:${REDIS_PASSWORD}@redis:6379/1
+      COOKIE_SECURE: "true"
+    command: ["npm", "test"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [backend]
+
+networks:
+  # MongoDB and Redis live on an internal network with no route to the outside
+  # world. Only the API can reach them.
+  backend:
+    internal: true
+  edge:
+
+volumes:
+  mongo-data:
+  mongo-config:
+  redis-data:

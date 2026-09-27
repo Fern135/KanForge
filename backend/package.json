@@ -1,0 +1,38 @@
+{
+  "name": "kanforge-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "migrate-mongo up -f migrate-mongo-config.js",
+    "migrate:down": "migrate-mongo down -f migrate-mongo-config.js",
+    "migrate:status": "migrate-mongo status -f migrate-mongo-config.js",
+    "migrate:create": "migrate-mongo create -f migrate-mongo-config.js",
+    "seed": "node scripts/seed.js",
+    "test": "node --test --test-concurrency=1 \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "argon2": "^0.45.1",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "migrate-mongo": "^14.0.7",
+    "mongoose": "^9.10.2",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "rate-limit-redis": "^6.0.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "supertest": "^7.3.0"
+  }
+}

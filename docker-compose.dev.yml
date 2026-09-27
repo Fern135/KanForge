@@ -1,0 +1,41 @@
+# Development overlay (`make dev`): API with --watch and the Vite dev server with
+# hot reload at http://localhost:5173. Not for production.
+services:
+  api:
+    image: kanforge-api:dev
+    build:
+      context: ./backend
+      target: dev
+    read_only: false
+    command: ["npm", "run", "dev"]
+    environment:
+      NODE_ENV: development
+      APP_ORIGIN: http://localhost:5173
+      COOKIE_SECURE: "false"
+      LOG_LEVEL: debug
+    volumes:
+      - ./backend/src:/app/src:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/health >/dev/null || exit 1"]
+      interval: 5s
+      retries: 20
+
+  web:
+    profiles: ["prod-only"]
+
+  web-dev:
+    image: kanforge-web:dev
+    build:
+      context: ./frontend
+      target: dev
+    environment:
+      VITE_API_PROXY: http://api:4000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src:ro
+      - ./frontend/index.html:/app/index.html:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [edge]
