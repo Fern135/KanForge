@@ -35,10 +35,12 @@ export const listsApi = {
 
 export const cardsApi = {
   create: (boardId, listId, title) => data(api.post(`${b(boardId)}/cards`, { listId, title })),
+  importCards: (boardId, listId, cards) => data(api.post(`${b(boardId)}/cards/bulk`, { listId, cards })),
   update: (boardId, cardId, body) => data(api.patch(c(boardId, cardId), body)),
   move: (boardId, cardId, listId, index) => data(api.put(`${c(boardId, cardId)}/move`, { listId, index })),
   remove: (boardId, cardId) => api.delete(c(boardId, cardId)),
   addChecklistItem: (boardId, cardId, text) => data(api.post(`${c(boardId, cardId)}/checklist`, { text })),
+  importChecklist: (boardId, cardId, items) => data(api.post(`${c(boardId, cardId)}/checklist/bulk`, { items })),
   updateChecklistItem: (boardId, cardId, itemId, body) =>
     data(api.patch(`${c(boardId, cardId)}/checklist/${encodeURIComponent(itemId)}`, body)),
   removeChecklistItem: (boardId, cardId, itemId) =>

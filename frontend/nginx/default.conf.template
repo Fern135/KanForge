@@ -1,5 +1,10 @@
+# Resolve the API through Docker's embedded DNS at runtime instead of once at
+# startup, so nginx still boots (and recovers) if the api container is down.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
 upstream api_upstream {
-  server api:4000;
+  zone api_upstream 64k;
+  server api:4000 resolve;
   keepalive 32;
 }
 
@@ -38,6 +43,13 @@ server {
 
   location /api/ {
     limit_req zone=api burst=60 nodelay;
+    include /etc/nginx/snippets/proxy.conf;
+  }
+
+  # Bulk card and checklist imports need a larger body than the 64k default.
+  location ~ ^/api/boards/[^/]+/cards/(?:[^/]+/checklist/)?bulk$ {
+    limit_req zone=api burst=60 nodelay;
+    client_max_body_size 256k;
     include /etc/nginx/snippets/proxy.conf;
   }
 

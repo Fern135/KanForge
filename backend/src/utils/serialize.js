@@ -17,6 +17,8 @@ const card = (c) => ({
   dueDate: c.dueDate ? new Date(c.dueDate).toISOString() : null,
   dueComplete: Boolean(c.dueComplete),
   checklist: (c.checklist || []).map((i) => ({ id: id(i._id), text: i.text, done: Boolean(i.done) })),
+  checklistTitle: c.checklistTitle || 'Checklist',
+  checklistHideDone: Boolean(c.checklistHideDone),
   commentCount: c.commentCount || 0,
 });
 

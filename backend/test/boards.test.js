@@ -126,6 +126,23 @@ describe('boards, lists, cards', () => {
     const { body: ck2 } = await api().patch(`${base}/checklist/${itemId}`).set(auth(bob.token)).send({ done: true }).expect(200);
     assert.equal(ck2.card.checklist[0].done, true);
 
+    const { body: bulk } = await api().post(`${base}/checklist/bulk`).set(auth(alice.token))
+      .send({ items: [{ text: ' a ' }, { text: 'b', done: true }] }).expect(201);
+    assert.deepEqual(bulk.card.checklist.map((i) => [i.text, i.done]), [['step', true], ['a', false], ['b', true]]);
+    await api().post(`${base}/checklist/bulk`).set(auth(alice.token)).send({ items: [{ text: '' }] }).expect(400);
+    await api().post(`${base}/checklist/bulk`).set(auth(alice.token)).send({ items: [{ text: 'x', extra: 1 }] }).expect(400);
+    const tooMany = Array.from({ length: 98 }, (_, i) => ({ text: `t${i}` }));
+    await api().post(`${base}/checklist/bulk`).set(auth(alice.token)).send({ items: tooMany }).expect(400);
+    const { body: after } = await api().get(base).set(auth(alice.token)).expect(200);
+    assert.equal(after.card.checklist.length, 3);
+    assert.equal(after.card.checklistTitle, 'Checklist');
+    assert.equal(after.card.checklistHideDone, false);
+    const { body: renamed } = await api().patch(base).set(auth(bob.token))
+      .send({ checklistTitle: ' Launch steps ', checklistHideDone: true }).expect(200);
+    assert.equal(renamed.card.checklistTitle, 'Launch steps');
+    assert.equal(renamed.card.checklistHideDone, true);
+    await api().patch(base).set(auth(alice.token)).send({ checklistTitle: '  ' }).expect(400);
+
     const due = new Date(Date.now() + 86400000).toISOString();
     const { body: d } = await api().patch(base).set(auth(alice.token)).send({ dueDate: due, description: '<script>x</script>' }).expect(200);
     assert.equal(d.card.dueDate, due);
@@ -135,6 +152,73 @@ describe('boards, lists, cards', () => {
     const { body: list } = await api().get(`${base}/comments`).set(auth(bob.token)).expect(200);
     assert.equal(list.comments[0].author.name, 'Alice');
     await api().delete(`${base}/comments/${c.comment.id}`).set(auth(alice.token)).expect(204);
+  });
+
+  it('bulk imports cards with their details, all-or-nothing', async () => {
+    const { boardId, list1 } = await makeBoard(alice.token);
+    const other = await makeBoard(alice.token);
+    const label = (await getBoard(alice.token, boardId)).labels[0].id;
+    const foreign = (await getBoard(alice.token, other.boardId)).labels[0].id;
+    await addCard(alice.token, boardId, list1, 'Existing');
+    const url = `/api/boards/${boardId}/cards/bulk`;
+    const due = new Date(Date.now() + 86400000).toISOString();
+
+    const { body } = await api().post(url).set(auth(alice.token)).send({
+      listId: list1,
+      cards: [
+        { title: 'Plain' },
+        {
+          title: 'Full', description: 'd', labels: [label, label], dueDate: due, dueComplete: true,
+          checklistTitle: 'Steps', checklistHideDone: true, checklist: [{ text: 'a' }, { text: 'b', done: true }],
+        },
+      ],
+    }).expect(201);
+    assert.equal(body.cards.length, 2);
+    const full = body.cards[1];
+    assert.deepEqual(full.labels, [label]);
+    assert.equal(full.dueDate, due);
+    assert.equal(full.checklistTitle, 'Steps');
+    assert.deepEqual(full.checklist.map((i) => [i.text, i.done]), [['a', false], ['b', true]]);
+    const board = await getBoard(alice.token, boardId);
+    const titles = board.cards.filter((c) => c.listId === list1).sort((a, b) => a.position - b.position).map((c) => c.title);
+    assert.deepEqual(titles, ['Existing', 'Plain', 'Full']);
+
+    // Bad input anywhere rejects the whole import.
+    await api().post(url).set(auth(alice.token)).send({ listId: list1, cards: [{ title: 'ok' }, { title: 'x', labels: [foreign] }] }).expect(400);
+    await api().post(url).set(auth(alice.token)).send({ listId: list1, cards: [{ title: 'x', createdBy: alice.user.id }] }).expect(400);
+    await api().post(url).set(auth(alice.token)).send({ listId: other.list1, cards: [{ title: 'x' }] }).expect(400);
+    assert.equal((await getBoard(alice.token, boardId)).cards.length, 3);
+
+    // Bulk routes accept bodies over the normal 32 KB cap.
+    const big = Array.from({ length: 60 }, (_, i) => ({ title: `Card ${i}`, description: 'x'.repeat(1000) }));
+    await api().post(url).set(auth(alice.token)).send({ listId: list1, cards: big }).expect(201);
+  });
+
+  it('rate limits every route, with a per-user budget for bulk imports', async () => {
+    // Unknown paths and health checks still carry rate-limit headers.
+    const missing = await api().get('/nope').expect(404);
+    assert.ok(missing.headers.ratelimit);
+    const health = await api().get('/api/health').expect(200);
+    assert.ok(health.headers.ratelimit);
+
+    const carol = await registerUser();
+    const { boardId, list1 } = await makeBoard(carol.token);
+    const card = await addCard(carol.token, boardId, list1, 'Bulk');
+    const url = `/api/boards/${boardId}/cards/${card.id}/checklist/bulk`;
+    for (let i = 0; i < 30; i += 1) {
+      await api().post(url).set(auth(carol.token)).send({ items: [{ text: `i${i}` }] }).expect(201);
+    }
+    const limited = await api().post(url).set(auth(carol.token)).send({ items: [{ text: 'over' }] }).expect(429);
+    assert.equal(limited.body.error.code, 'RATE_LIMITED');
+    // The budget is per user: someone else on the same IP can still import.
+    const dave = await registerUser();
+    const other = await makeBoard(dave.token);
+    const theirs = await addCard(dave.token, other.boardId, other.list1, 'Mine');
+    await api().post(`/api/boards/${other.boardId}/cards/${theirs.id}/checklist/bulk`).set(auth(dave.token))
+      .send({ items: [{ text: 'ok' }] }).expect(201);
+    // Reads don't count against the write budget.
+    const read = await api().get(`/api/boards/${boardId}`).set(auth(carol.token)).expect(200);
+    assert.ok(read.headers.ratelimit);
   });
 
   it('rejects malformed ids and oversized payloads', async () => {

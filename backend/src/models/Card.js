@@ -18,6 +18,8 @@ const cardSchema = new Schema(
     dueDate: { type: Date, default: null },
     dueComplete: { type: Boolean, default: false },
     checklist: { type: [checklistItemSchema], validate: (v) => v.length <= 100 },
+    checklistTitle: { type: String, trim: true, minlength: 1, maxlength: 100, default: 'Checklist' },
+    checklistHideDone: { type: Boolean, default: false },
     commentCount: { type: Number, default: 0 },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },

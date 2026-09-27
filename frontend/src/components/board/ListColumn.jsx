@@ -1,12 +1,12 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { Draggable, Droppable } from '@hello-pangea/dnd';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faEllipsis, faTrash } from '@fortawesome/free-solid-svg-icons';
+import { faEllipsis, faFileImport, faTrash } from '@fortawesome/free-solid-svg-icons';
 import CardItem from './CardItem';
 import InlineAdd from '../InlineAdd';
 import EditableText from '../EditableText';
 
-function ListColumn({ list, index, cards, labelsById, onOpenCard, onAddCard, onRename, onDelete }) {
+function ListColumn({ list, index, cards, labelsById, onOpenCard, onAddCard, onImport, onRename, onDelete }) {
   const [menu, setMenu] = useState(false);
   const menuRef = useRef(null);
 
@@ -35,6 +35,11 @@ function ListColumn({ list, index, cards, labelsById, onOpenCard, onAddCard, onR
               </button>
               {menu && (
                 <ul className="dropdown-menu dropdown-menu-end show shadow border-0" style={{ right: 0, left: 'auto' }}>
+                  <li>
+                    <button type="button" className="dropdown-item" onClick={() => { setMenu(false); onImport(list); }}>
+                      <FontAwesomeIcon icon={faFileImport} className="me-2" />Import cards
+                    </button>
+                  </li>
                   <li>
                     <button type="button" className="dropdown-item text-danger" onClick={() => { setMenu(false); onDelete(list); }}>
                       <FontAwesomeIcon icon={faTrash} className="me-2" />Delete list

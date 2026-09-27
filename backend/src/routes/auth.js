@@ -114,7 +114,7 @@ module.exports = function authRouter(limiters) {
     res.status(204).end();
   });
 
-  router.post('/logout-all', requireAuth, async (req, res) => {
+  router.post('/logout-all', limiters.sensitive, requireAuth, async (req, res) => {
     await User.updateOne({ _id: req.user.id }, { $inc: { tokenVersion: 1 } });
     await tokens.revokeAllSessions(req.user.id);
     await cache.invalidateUser(req.user.id);
@@ -126,7 +126,7 @@ module.exports = function authRouter(limiters) {
     res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name } });
   });
 
-  router.patch('/me', requireAuth, body(profileSchema), async (req, res) => {
+  router.patch('/me', limiters.sensitive, requireAuth, body(profileSchema), async (req, res) => {
     const user = await User.findByIdAndUpdate(req.user.id, { $set: { name: req.body.name } }, { new: true });
     await cache.invalidateUser(req.user.id);
     // Cached board payloads embed member names, so drop every board this user is on.

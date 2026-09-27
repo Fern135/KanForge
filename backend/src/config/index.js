@@ -15,7 +15,7 @@ const schema = z.object({
   REDIS_URL: z.string().startsWith('redis'),
   JWT_ACCESS_SECRET: z.string().min(64, 'JWT_ACCESS_SECRET must be at least 64 characters'),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
-  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(7),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(14),
   COOKIE_SECURE: bool.default(true),
   APP_ORIGIN: z.string().url(),
   TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(1),

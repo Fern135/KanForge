@@ -6,34 +6,47 @@ const List = require('../models/List');
 const Card = require('../models/Card');
 const Comment = require('../models/Comment');
 const cache = require('../services/cache');
-const { positionAt } = require('../services/position');
+const { positionAt, GAP } = require('../services/position');
 const { body, ids, objectId, z } = require('../middleware/validate');
 const AppError = require('../utils/AppError');
 const s = require('../utils/serialize');
 
 const MAX_CARDS_PER_LIST = 500;
 const MAX_CHECKLIST = 100;
+const MAX_IMPORT_CARDS = 100;
 
 const title = z.string().trim().min(1).max(200);
 const index = z.number().int().min(0).max(10_000);
+const checklistText = z.string().trim().min(1).max(200);
+const checklistItem = z.strictObject({ text: checklistText, done: z.boolean().optional() });
+const cardFields = {
+  description: z.string().trim().max(5000).optional(),
+  labels: z.array(objectId).max(30).optional(),
+  dueDate: z.iso.datetime({ offset: true }).nullable().optional(),
+  dueComplete: z.boolean().optional(),
+  checklistTitle: z.string().trim().min(1).max(100).optional(),
+  checklistHideDone: z.boolean().optional(),
+};
 const createSchema = z.strictObject({ listId: objectId, title });
 const updateSchema = z
-  .strictObject({
-    title: title.optional(),
-    description: z.string().trim().max(5000).optional(),
-    labels: z.array(objectId).max(30).optional(),
-    dueDate: z.iso.datetime({ offset: true }).nullable().optional(),
-    dueComplete: z.boolean().optional(),
-  })
+  .strictObject({ title: title.optional(), ...cardFields })
   .refine((v) => Object.keys(v).length > 0, 'Nothing to update');
+const importSchema = z.strictObject({
+  listId: objectId,
+  cards: z
+    .array(z.strictObject({ title, ...cardFields, checklist: z.array(checklistItem).max(MAX_CHECKLIST).optional() }))
+    .min(1)
+    .max(MAX_IMPORT_CARDS),
+});
 const moveSchema = z.strictObject({ listId: objectId, index });
-const checklistCreateSchema = z.strictObject({ text: z.string().trim().min(1).max(200) });
+const checklistCreateSchema = z.strictObject({ text: checklistText });
+const checklistBulkSchema = z.strictObject({ items: z.array(checklistItem).min(1).max(MAX_CHECKLIST) });
 const checklistUpdateSchema = z
   .strictObject({ text: z.string().trim().min(1).max(200).optional(), done: z.boolean().optional() })
   .refine((v) => Object.keys(v).length > 0, 'Nothing to update');
 const commentSchema = z.strictObject({ text: z.string().trim().min(1).max(2000) });
 
-module.exports = function cardsRouter() {
+module.exports = function cardsRouter(limiters) {
   const router = express.Router({ mergeParams: true });
 
   const assertListInBoard = async (listId, boardId) => {
@@ -48,6 +61,13 @@ module.exports = function cardsRouter() {
     req.card = card;
     next();
   }
+
+  // Returns the de-duplicated label ids, or throws if any isn't one of the board's labels.
+  const boardLabels = (board, labels) => {
+    const allowed = new Set(board.labels.map((l) => String(l._id)));
+    if (!labels.every((l) => allowed.has(l))) throw AppError.badRequest('Unknown label', 'BAD_LABEL');
+    return [...new Set(labels)];
+  };
 
   const done = async (req, res, card, status = 200) => {
     await cache.invalidateBoard(req.board._id);
@@ -71,6 +91,29 @@ module.exports = function cardsRouter() {
     await done(req, res, card.toObject(), 201);
   });
 
+  // Creates many cards at the end of a list. All-or-nothing: rejected if the list would exceed its limit.
+  router.post('/bulk', limiters.bulk, body(importSchema), async (req, res) => {
+    const { listId, cards } = req.body;
+    await assertListInBoard(listId, req.board._id);
+    if ((await Card.countDocuments({ list: listId })) + cards.length > MAX_CARDS_PER_LIST) {
+      throw AppError.badRequest(`A list can hold at most ${MAX_CARDS_PER_LIST} cards`, 'LIMIT');
+    }
+    const start = await positionAt(Card, { list: listId }, Number.MAX_SAFE_INTEGER);
+    const docs = cards.map((c, i) => ({
+      ...c,
+      labels: boardLabels(req.board, c.labels || []),
+      dueDate: c.dueDate ? new Date(c.dueDate) : null,
+      checklist: (c.checklist || []).map((item) => ({ text: item.text, done: Boolean(item.done) })),
+      board: req.board._id,
+      list: listId,
+      position: start + i * GAP,
+      createdBy: req.user.id,
+    }));
+    const created = await Card.insertMany(docs, { ordered: true });
+    await cache.invalidateBoard(req.board._id);
+    res.status(201).json({ cards: created.map((c) => s.card(c.toObject())) });
+  });
+
   router.use('/:cardId', ids('cardId'), loadCard);
 
   router.get('/:cardId', (req, res) => {
@@ -79,11 +122,7 @@ module.exports = function cardsRouter() {
 
   router.patch('/:cardId', body(updateSchema), async (req, res) => {
     const update = { ...req.body };
-    if (update.labels) {
-      const allowed = new Set(req.board.labels.map((l) => String(l._id)));
-      if (!update.labels.every((l) => allowed.has(l))) throw AppError.badRequest('Unknown label', 'BAD_LABEL');
-      update.labels = [...new Set(update.labels)];
-    }
+    if (update.labels) update.labels = boardLabels(req.board, update.labels);
     if (update.dueDate !== undefined) update.dueDate = update.dueDate ? new Date(update.dueDate) : null;
     const card = await Card.findByIdAndUpdate(req.card._id, { $set: update }, { new: true, runValidators: true }).lean();
     await done(req, res, card);
@@ -117,6 +156,18 @@ module.exports = function cardsRouter() {
       { new: true, runValidators: true },
     ).lean();
     if (!card) throw AppError.badRequest('Checklist limit reached', 'LIMIT');
+    await done(req, res, card, 201);
+  });
+
+  // Appends many items at once. All-or-nothing: rejected if the result would exceed the limit.
+  router.post('/:cardId/checklist/bulk', limiters.bulk, body(checklistBulkSchema), async (req, res) => {
+    const { items } = req.body;
+    const card = await Card.findOneAndUpdate(
+      { _id: req.card._id, [`checklist.${MAX_CHECKLIST - items.length}`]: trusted({ $exists: false }) },
+      { $push: { checklist: { $each: items.map((i) => ({ text: i.text, done: Boolean(i.done) })) } } },
+      { new: true, runValidators: true },
+    ).lean();
+    if (!card) throw AppError.badRequest(`A checklist can hold at most ${MAX_CHECKLIST} items`, 'LIMIT');
     await done(req, res, card, 201);
   });
 

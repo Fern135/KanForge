@@ -14,6 +14,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import ListColumn from '../components/board/ListColumn';
 import CardModal from '../components/board/CardModal';
 import { MembersModal, LabelsModal, SettingsModal } from '../components/board/BoardModals';
+import ImportCardsModal from '../components/board/ImportCardsModal';
 
 // Order is kept as id arrays (listOrder, cardOrder[listId]). Server positions are
 // used only for the initial sort, so optimistic moves never depend on
@@ -44,6 +45,7 @@ export default function Board() {
   const [openCardId, setOpenCardId] = useState(null);
   const [modal, setModal] = useState(null);
   const [deleteList, setDeleteList] = useState(null);
+  const [importList, setImportList] = useState(null);
   // Moves are sent one at a time, in order, so rapid drags can't reach the server out of sequence.
   const queue = useRef(Promise.resolve());
 
@@ -141,6 +143,14 @@ export default function Board() {
     },
     [boardId, toast],
   );
+
+  const addImportedCards = useCallback((listId, cards) => {
+    setState((s) => ({
+      ...s,
+      cardsById: { ...s.cardsById, ...Object.fromEntries(cards.map((c) => [c.id, c])) },
+      cardOrder: { ...s.cardOrder, [listId]: [...s.cardOrder[listId], ...cards.map((c) => c.id)] },
+    }));
+  }, []);
 
   const renameList = useCallback(
     async (listId, title) => {
@@ -249,6 +259,7 @@ export default function Board() {
                   labelsById={labelsById}
                   onOpenCard={setOpenCardId}
                   onAddCard={addCard}
+                  onImport={setImportList}
                   onRename={renameList}
                   onDelete={setDeleteList}
                 />
@@ -291,6 +302,16 @@ export default function Board() {
       {modal === 'labels' && <LabelsModal board={meta} onClose={() => setModal(null)} onLabelsChange={onLabelsChange} />}
       {modal === 'settings' && (
         <SettingsModal board={meta} onClose={() => setModal(null)} onUpdate={patchMeta} onDeleted={() => navigate('/', { replace: true })} />
+      )}
+      {importList && (
+        <ImportCardsModal
+          boardId={boardId}
+          list={importList}
+          cardCount={state.cardOrder[importList.id]?.length || 0}
+          labels={meta.labels}
+          onImported={addImportedCards}
+          onClose={() => setImportList(null)}
+        />
       )}
       {deleteList && (
         <ConfirmModal

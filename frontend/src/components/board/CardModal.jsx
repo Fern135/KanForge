@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faTag, faClock, faAlignLeft, faSquareCheck, faComments, faTrash, faXmark, faPlus, faCheck,
+  faTag, faClock, faAlignLeft, faSquareCheck, faComments, faTrash, faXmark, faPlus, faCheck, faFileImport,
 } from '@fortawesome/free-solid-svg-icons';
 import Modal from '../Modal';
 import Avatar from '../Avatar';
@@ -11,6 +11,7 @@ import { cardsApi } from '../../api/endpoints';
 import { errorMessage } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
+import { MAX_CHECKLIST, parseChecklistImport } from '../../utils/checklistImport';
 import { dueStatus, fromLocalInput, fullDate, timeAgo, toLocalInput } from '../../utils/dates';
 
 function Section({ icon, title, children, action }) {
@@ -34,6 +35,9 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
   const [desc, setDesc] = useState(card.description);
   const [pickLabels, setPickLabels] = useState(false);
   const [newItem, setNewItem] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importBusy, setImportBusy] = useState(false);
   const [comments, setComments] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -86,6 +90,41 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
     await run(() => cardsApi.addChecklistItem(boardId, card.id, text)).then(() => setNewItem('')).catch(() => {});
   };
 
+  const parsedImport = useMemo(() => {
+    try {
+      return { items: parseChecklistImport(importText) };
+    } catch (err) {
+      return { error: err.message };
+    }
+  }, [importText]);
+  const room = MAX_CHECKLIST - card.checklist.length;
+  const importError = parsedImport.error
+    || (parsedImport.items.length > room ? `Only ${room} more item${room === 1 ? '' : 's'} fit (limit ${MAX_CHECKLIST})` : null);
+
+  const closeImport = () => {
+    setImporting(false);
+    setImportText('');
+  };
+
+  const importItems = async () => {
+    if (importError || !parsedImport.items.length) return;
+    setImportBusy(true);
+    try {
+      await run(() => cardsApi.importChecklist(boardId, card.id, parsedImport.items));
+      toast.success(`Imported ${parsedImport.items.length} item${parsedImport.items.length === 1 ? '' : 's'}`);
+      closeImport();
+    } catch {
+      // run() already showed the error.
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const setChecklistSetting = (body) => {
+    onChange({ ...card, ...body });
+    return update(body).catch(() => onChange(card));
+  };
+
   const toggleItem = (item) => {
     onChange({ ...card, checklist: card.checklist.map((i) => (i.id === item.id ? { ...i, done: !i.done } : i)) });
     run(() => cardsApi.updateChecklistItem(boardId, card.id, item.id, { done: !item.done })).catch(() => onChange(card));
@@ -117,6 +156,7 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
 
   const done = card.checklist.filter((i) => i.done).length;
   const pct = card.checklist.length ? Math.round((done / card.checklist.length) * 100) : 0;
+  const visibleItems = card.checklistHideDone ? card.checklist.filter((i) => !i.done) : card.checklist;
   const status = dueStatus(card);
   const selected = labels.filter((l) => card.labels.includes(l.id));
 
@@ -221,14 +261,66 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
         )}
       </Section>
 
-      <Section icon={faSquareCheck} title={`Checklist${card.checklist.length ? ` · ${pct}%` : ''}`}>
+      <Section
+        icon={faSquareCheck}
+        title={
+          <>
+            <EditableText
+              value={card.checklistTitle}
+              maxLength={100}
+              ariaLabel="Checklist title"
+              inputClassName="form-control form-control-sm d-inline-block w-auto"
+              onSave={(checklistTitle) => update({ checklistTitle })}
+            />
+            {card.checklist.length > 0 && ` · ${pct}%`}
+          </>
+        }
+        action={
+          <div className="d-flex align-items-center gap-3">
+            {done > 0 && (
+              <div className="form-check mb-0 small">
+                <input className="form-check-input" type="checkbox" id="checklist-hide-done" checked={card.checklistHideDone}
+                  onChange={(e) => setChecklistSetting({ checklistHideDone: e.target.checked })} />
+                <label className="form-check-label" htmlFor="checklist-hide-done">Hide when done</label>
+              </div>
+            )}
+            <button type="button" className="icon-btn small" onClick={() => (importing ? closeImport() : setImporting(true))}>
+              {importing ? 'Cancel' : <><FontAwesomeIcon icon={faFileImport} className="me-1" />Import</>}
+            </button>
+          </div>
+        }
+      >
+        {importing && (
+          <div className="mb-3">
+            <textarea
+              className="form-control form-control-sm font-monospace mb-1"
+              rows={6}
+              autoFocus
+              aria-label="Items to import"
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              placeholder={'["Buy milk", {"text": "Call Ana", "done": true}]\n\nor one item per line:\n- [ ] Buy milk\n- [x] Call Ana'}
+            />
+            <div className="d-flex align-items-center gap-2">
+              <small className={`flex-grow-1 ${importError ? 'text-danger' : 'text-muted'}`}>
+                {importError || (parsedImport.items.length
+                  ? `${parsedImport.items.length} item${parsedImport.items.length === 1 ? '' : 's'} ready`
+                  : 'Paste a JSON array or one item per line')}
+              </small>
+              <button type="button" className="btn btn-primary btn-sm" onClick={importItems}
+                disabled={importBusy || Boolean(importError) || !parsedImport.items.length}>
+                Import
+              </button>
+            </div>
+          </div>
+        )}
         {card.checklist.length > 0 && (
           <div className="progress checklist-progress mb-2" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
             <div className="progress-bar" style={{ width: `${pct}%` }} />
           </div>
         )}
         <ul className="list-unstyled mb-2">
-          {card.checklist.map((item) => (
+          {visibleItems.map((item) => (
             <li key={item.id} className="d-flex align-items-center gap-2 py-1">
               <input className="form-check-input mt-0" type="checkbox" checked={item.done} onChange={() => toggleItem(item)} aria-label={item.text} />
               <span className={`flex-grow-1 text-break ${item.done ? 'text-decoration-line-through text-muted' : ''}`}>{item.text}</span>
@@ -239,6 +331,9 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
             </li>
           ))}
         </ul>
+        {card.checklistHideDone && done > 0 && (
+          <p className="text-muted small mb-2">{done} completed item{done === 1 ? '' : 's'} hidden</p>
+        )}
         <form onSubmit={addItem} className="d-flex gap-2">
           <input className="form-control form-control-sm" placeholder="Add an item" maxLength={200} value={newItem} onChange={(e) => setNewItem(e.target.value)} />
           <button type="submit" className="btn btn-sm btn-primary" disabled={!newItem.trim()} aria-label="Add item">

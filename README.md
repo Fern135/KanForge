@@ -13,12 +13,63 @@
 
 ## Features
 
-- **Boards, lists and cards** with drag and drop that works with a mouse, touch or keyboard
-- **Cards** with descriptions, colored labels, due dates (overdue and due-soon badges), checklists and comments
-- **Sharing:** invite people to a board by email. The owner manages members, and members can leave
-- **Six board backgrounds.** Mobile-first navy, light green and gray theme
-- **Accounts:** email and password sign-in, profile, password change, "sign out everywhere"
-- **Security first:** Argon2id, rotating refresh tokens, CSRF protection, rate limits, strict CSP, and non-root read-only containers. See [Security](#security)
+**Boards**
+- Create, rename and delete boards (up to 100 per user)
+- Six board backgrounds. Mobile-first navy, light green and gray theme
+- Share a board by inviting people by email. The owner manages members and can delete the board; members can leave
+- Per-board labels: add, rename, recolor (8 colors) and delete
+
+**Lists**
+- Add, rename, delete and reorder lists with drag and drop (up to 100 per board)
+
+**Cards**
+- Add, rename, delete and move cards within or between lists (up to 500 per list)
+- Drag and drop works with a mouse, touch or keyboard, and the UI updates immediately
+- Descriptions (up to 5,000 characters)
+- Colored labels from the board's label set
+- Due dates with a "complete" toggle and overdue / due-soon badges
+- Comments. Authors can delete their own, and the board owner can delete any
+- Card previews show badges for the due date, description, checklist progress and comment count
+- **Bulk import cards:** open a list's **⋯** menu → **Import cards** and paste up to 100 cards at once. Use plain text (one title per line, with indented `- [ ]` / `- [x]` lines as checklist items) or JSON where each card can set any of its details:
+
+  ```json
+  [
+    "Just a title",
+    {
+      "title": "Launch the site",
+      "description": "Everything needed to go live",
+      "labels": ["red"],
+      "dueDate": "2026-10-15",
+      "dueComplete": false,
+      "checklistTitle": "Steps",
+      "checklistHideDone": false,
+      "checklist": ["Buy domain", { "text": "Set up DNS", "done": true }]
+    }
+  ]
+  ```
+  Only `title` is required. Labels match the board's labels by name, or by color. A date without a time means the end of that day. The dialog checks everything and shows what it found before you import, and an import is all-or-nothing.
+
+**Checklists**
+- Add, check off and delete items, with a progress bar (up to 100 items per card)
+- Rename the checklist by clicking its title (it starts as "Checklist")
+- **Hide when done:** hide completed items. The setting is saved per card
+- **Bulk import:** click **Import** on a card's checklist and paste items as JSON or as one item per line:
+
+  ```json
+  ["Buy milk", { "text": "Call Ana", "done": true }]
+  ```
+  ```
+  - [ ] Buy milk
+  - [x] Call Ana
+  ```
+  `{ "items": [...] }` also works. The panel shows how many items it found before you import. An import is all-or-nothing: if it would take the checklist past 100 items, nothing is added.
+
+**Accounts**
+- Email and password sign-up and sign-in. You stay signed in for 14 days without activity
+- Edit your profile name, change your password and "sign out everywhere"
+
+**Security first**
+- Argon2id, rotating refresh tokens, CSRF protection, rate limits, strict CSP, and non-root read-only containers. See [Security](#security)
 
 **Stack:**
 - Node.js 22 (Express 5), MongoDB 8.2, Redis 7
@@ -118,7 +169,7 @@ Settings live in `.env`, which is created on the first run. It's git-ignored and
 | `APP_ORIGIN` | `https://localhost:8443` | The public URL people use. It's used for CORS, origin checks and cookies |
 | `HTTP_PORT` / `HTTPS_PORT` | `8080` / `8443` | Ports on the host. HTTP only redirects to HTTPS |
 | `ACCESS_TOKEN_TTL_SECONDS` | `600` | Access token lifetime |
-| `REFRESH_TOKEN_TTL_DAYS` | `7` | How long you stay signed in without activity |
+| `REFRESH_TOKEN_TTL_DAYS` | `14` | How long you stay signed in without activity |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `COMPOSE_PROJECT_NAME` | `kanforge` | Prefix for container and volume names |
 | `MONGO_*`, `REDIS_PASSWORD`, `JWT_ACCESS_SECRET` | random | Generated secrets. Don't reuse them anywhere else |
@@ -200,9 +251,13 @@ browser ──HTTPS──▶ nginx (web) ──▶ api (Express) ──▶ mongo
 - Signing out everywhere or changing your password immediately invalidates every outstanding access token.
 
 **Abuse protection**
-- nginx rate-limits per IP, and the API adds per-route rate limits stored in Redis.
+- Every request is rate-limited, and the API counts it before reading the request body. nginx limits per IP. The API adds, in Redis:
+  - a per-IP limit on every route (600/min), including unknown paths
+  - per-user limits on board changes (300/min) and bulk imports (30 per 15 min)
+  - stricter per-IP limits on sign-in, token refresh, password change, profile edits, "sign out everywhere" and invites
+- Health checks have their own in-memory limit, so they keep answering when Redis is down.
 - Login locks out per email+IP (after 5 failures) and per account (after 20).
-- Payloads are capped at 32 KB, requests must be JSON, and there are per-board and per-list count limits.
+- Payloads are capped at 32 KB (256 KB for the bulk import endpoints), requests must be JSON, and there are per-board and per-list count limits.
 
 **Authorization**
 - Every board-scoped query filters by a board the caller is a member of, so IDs from other boards don't work (IDOR).

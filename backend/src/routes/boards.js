@@ -171,7 +171,7 @@ module.exports = function boardsRouter(limiters) {
   });
 
   router.use('/:boardId/lists', listsRouter());
-  router.use('/:boardId/cards', cardsRouter());
+  router.use('/:boardId/cards', cardsRouter(limiters));
 
   return router;
 };

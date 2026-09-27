@@ -51,6 +51,17 @@ function createApp() {
     next();
   });
 
+  // Health checks have their own in-memory limit, so they still answer when Redis is down.
+  app.get('/api/health', limiters.health, (_req, res) => res.json({ status: 'ok' }));
+  app.get('/api/ready', limiters.health, async (_req, res) => {
+    const mongoOk = mongoose.connection.readyState === 1;
+    const redisOk = await redis.ping().then((r) => r === 'PONG').catch(() => false);
+    res.status(mongoOk && redisOk ? 200 : 503).json({ mongo: mongoOk, redis: redisOk });
+  });
+
+  // Every other request is counted before any body is parsed, including unknown paths.
+  app.use(limiters.api);
+
   // Only accept JSON bodies. Anything else is refused before it's parsed.
   app.use((req, _res, next) => {
     const hasBody = Number(req.get('content-length') || 0) > 0 || req.get('transfer-encoding');
@@ -59,20 +70,17 @@ function createApp() {
     }
     next();
   });
+  // Bulk imports carry many items per request, so they get a larger (still bounded) limit.
+  app.use(
+    ['/api/boards/:boardId/cards/bulk', '/api/boards/:boardId/cards/:cardId/checklist/bulk'],
+    express.json({ limit: '256kb', strict: true }),
+  );
   app.use(express.json({ limit: '32kb', strict: true }));
   app.use(cookieParser());
   app.use(originCheck);
 
-  app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
-  app.get('/api/ready', async (_req, res) => {
-    const mongoOk = mongoose.connection.readyState === 1;
-    const redisOk = await redis.ping().then((r) => r === 'PONG').catch(() => false);
-    res.status(mongoOk && redisOk ? 200 : 503).json({ mongo: mongoOk, redis: redisOk });
-  });
-
-  app.use('/api', limiters.api);
   app.use('/api/auth', authRouter(limiters));
-  app.use('/api/boards', requireAuth, boardsRouter(limiters));
+  app.use('/api/boards', requireAuth, limiters.writes, boardsRouter(limiters));
 
   app.use(notFound);
   app.use(errorHandler);
