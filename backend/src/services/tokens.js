@@ -106,4 +106,5 @@ module.exports = {
   revokeSession,
   revokeAllSessions,
   randomToken,
+  sha256,
 };

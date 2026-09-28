@@ -115,6 +115,98 @@ describe('auth', () => {
     assert.equal(res.status, 403);
   });
 
+  describe('security PIN', () => {
+    const PIN = '482913';
+    const pinLogin = (pd, pin) => {
+      const req = api().post('/api/auth/login-pin');
+      if (pd) req.set('Cookie', [`pd=${pd}`]);
+      return req.send({ pin });
+    };
+    const enablePin = async (u) => {
+      const res = await api().put('/api/auth/pin').set(auth(u.token)).send({ currentPassword: u.password, pin: PIN }).expect(200);
+      return cookiesFrom(res).pd;
+    };
+
+    it('is off for new accounts, and PIN login needs a remembered device', async () => {
+      const u = await registerUser();
+      const status = await api().get('/api/auth/pin').set(auth(u.token)).expect(200);
+      assert.equal(status.body.enabled, false);
+      assert.equal(u.cookies.pd, undefined);
+      const res = await pinLogin(null, PIN);
+      assert.equal(res.status, 401);
+      assert.equal(res.body.error.code, 'PIN_DEVICE_UNKNOWN');
+      await pinLogin('x'.repeat(43), PIN).expect(401);
+      await api().post('/api/auth/login-pin').send({ email: u.email, pin: PIN }).expect(400);
+    });
+
+    it('requires the password and a strong PIN to turn it on', async () => {
+      const u = await registerUser();
+      await api().put('/api/auth/pin').set(auth(u.token)).send({ currentPassword: 'wrong', pin: PIN }).expect(400);
+      for (const weak of ['1234', '111111', '123456', '87654321', 'abcdef']) {
+        await api().put('/api/auth/pin').set(auth(u.token)).send({ currentPassword: u.password, pin: weak }).expect(400);
+      }
+      await api().put('/api/auth/pin').send({ currentPassword: u.password, pin: PIN }).expect(401);
+    });
+
+    it('signs in with the PIN alone on the remembered device', async () => {
+      const u = await registerUser();
+      const pd = await enablePin(u);
+      assert.ok(pd);
+      const changed = await api().put('/api/auth/pin').set(auth(u.token)).set('Cookie', [`pd=${pd}`])
+        .send({ currentPassword: u.password, pin: PIN }).expect(200);
+      const pdCookie = changed.headers['set-cookie'].find((c) => c.startsWith('pd='));
+      assert.match(pdCookie, /HttpOnly/);
+      assert.match(pdCookie, /SameSite=Strict/);
+
+      const who = await api().get('/api/auth/pin-device').set('Cookie', [`pd=${pd}`]).expect(200);
+      assert.equal(who.body.user, null, 'changing the PIN rotated the device token');
+
+      const fresh = cookiesFrom(changed).pd;
+      assert.equal((await api().get('/api/auth/pin-device').set('Cookie', [`pd=${fresh}`])).body.user.email, u.email);
+      const res = await pinLogin(fresh, PIN).expect(200);
+      assert.ok(res.body.accessToken);
+      assert.equal(res.body.user.email, u.email);
+      assert.equal(res.body.user.pinHash, undefined);
+      const wrong = await pinLogin(fresh, '482914');
+      assert.equal(wrong.status, 401);
+      assert.equal(wrong.body.error.code, 'BAD_CREDENTIALS');
+      await flushRedis();
+    });
+
+    it('remembers a device on password sign-in once the PIN is on', async () => {
+      const u = await registerUser();
+      await enablePin(u);
+      const res = await api().post('/api/auth/login').send({ email: u.email, password: u.password }).expect(200);
+      const pd = cookiesFrom(res).pd;
+      await pinLogin(pd, PIN).expect(200);
+      await api().post('/api/auth/pin-device/forget').set('Cookie', [`pd=${pd}`]).expect(204);
+      await pinLogin(pd, PIN).expect(401);
+    });
+
+    it('turning it off or signing out everywhere forgets every device', async () => {
+      const u = await registerUser();
+      const pd = await enablePin(u);
+      await api().post('/api/auth/pin/disable').set(auth(u.token)).send({ currentPassword: 'wrong' }).expect(400);
+      await api().post('/api/auth/pin/disable').set(auth(u.token)).send({ currentPassword: u.password }).expect(200);
+      await pinLogin(pd, PIN).expect(401);
+
+      const again = await enablePin(u);
+      await api().post('/api/auth/logout-all').set(auth(u.token)).expect(204);
+      await pinLogin(again, PIN).expect(401);
+    });
+
+    it('locks PIN sign-in after repeated failures, separately from password login', async () => {
+      const u = await registerUser();
+      const pd = await enablePin(u);
+      for (let i = 0; i < 5; i += 1) await pinLogin(pd, '000001').expect(401);
+      const res = await pinLogin(pd, PIN);
+      assert.equal(res.status, 429);
+      assert.equal(res.body.error.code, 'LOCKED');
+      await api().post('/api/auth/login').send({ email: u.email, password: u.password }).expect(200);
+      await flushRedis();
+    });
+  });
+
   it('rejects non-JSON bodies', async () => {
     const res = await api().post('/api/auth/login').type('form').send('email=a@b.co&password=x');
     assert.equal(res.status, 415);

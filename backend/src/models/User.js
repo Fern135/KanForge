@@ -7,6 +7,14 @@ const userSchema = new Schema(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, maxlength: 254 },
     name: { type: String, required: true, trim: true, maxlength: 60 },
     passwordHash: { type: String, required: true, select: false },
+    // Optional sign-in PIN. Off (unset) for every new account.
+    pinHash: { type: String, select: false },
+    // Devices allowed to sign in with the PIN alone. Only token hashes are stored.
+    pinDevices: {
+      type: [{ _id: false, tokenHash: String, createdAt: Date }],
+      default: undefined,
+      select: false,
+    },
     // Bumped on password change / "log out everywhere" to invalidate outstanding access tokens.
     tokenVersion: { type: Number, default: 0 },
   },

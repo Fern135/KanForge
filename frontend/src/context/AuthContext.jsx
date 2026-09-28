@@ -33,6 +33,11 @@ export function AuthProvider({ children }) {
     setSession(data.accessToken, data.user);
   }, []);
 
+  const loginWithPin = useCallback(async (credentials) => {
+    const data = await authApi.loginWithPin(credentials);
+    setSession(data.accessToken, data.user);
+  }, []);
+
   const register = useCallback(async (payload) => {
     const data = await authApi.register(payload);
     setSession(data.accessToken, data.user);
@@ -55,8 +60,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, status, login, register, logout, logoutAll, setUser }),
-    [user, status, login, register, logout, logoutAll],
+    () => ({ user, status, login, loginWithPin, register, logout, logoutAll, setUser }),
+    [user, status, login, loginWithPin, register, logout, logoutAll],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

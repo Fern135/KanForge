@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faShieldHalved, faUser, faRightFromBracket } from '@fortawesome/free-solid-svg-icons';
+import { faShieldHalved, faUser, faRightFromBracket, faKey } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { authApi } from '../api/endpoints';
@@ -14,6 +14,13 @@ export default function Account() {
   const [name, setName] = useState(user.name);
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [busy, setBusy] = useState('');
+  const [pinEnabled, setPinEnabled] = useState(null);
+  const [pinForm, setPinForm] = useState(null);
+  const [pinInput, setPinInput] = useState({ pin: '', confirm: '', currentPassword: '' });
+
+  useEffect(() => {
+    authApi.pinStatus().then((d) => setPinEnabled(d.enabled)).catch(() => setPinEnabled(false));
+  }, []);
 
   const saveName = async (e) => {
     e.preventDefault();
@@ -43,6 +50,36 @@ export default function Account() {
       setBusy('');
     }
   };
+
+  const closePinForm = () => {
+    setPinForm(null);
+    setPinInput({ pin: '', confirm: '', currentPassword: '' });
+  };
+
+  const submitPin = async (e) => {
+    e.preventDefault();
+    setBusy('pin');
+    try {
+      if (pinForm === 'disable') {
+        await authApi.disablePin({ currentPassword: pinInput.currentPassword });
+        setPinEnabled(false);
+        toast.success('Security PIN turned off');
+      } else {
+        await authApi.setPin({ currentPassword: pinInput.currentPassword, pin: pinInput.pin });
+        toast.success(pinEnabled ? 'Security PIN changed' : 'Security PIN turned on');
+        setPinEnabled(true);
+      }
+      closePinForm();
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const digits = (v) => v.replace(/\D/g, '').slice(0, 8);
+  const pinValid = pinInput.currentPassword
+    && (pinForm === 'disable' || (/^\d{6,8}$/.test(pinInput.pin) && pinInput.pin === pinInput.confirm));
 
   const signOutEverywhere = async () => {
     await logoutAll().catch(() => {});
@@ -78,6 +115,50 @@ export default function Account() {
               value={pw.confirm} maxLength={128} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} />
             <button className="btn btn-primary" type="submit" disabled={busy === 'pw' || !pwValid}>Update password</button>
           </form>
+        </div>
+      </section>
+
+      <section className="card border-0 shadow-sm mb-4">
+        <div className="card-body">
+          <div className="d-flex align-items-center justify-content-between gap-2 mb-1">
+            <h2 className="h6 fw-bold mb-0"><FontAwesomeIcon icon={faKey} className="me-2 text-success" />Security PIN</h2>
+            {pinEnabled !== null && (
+              <span className={`badge ${pinEnabled ? 'text-bg-success' : 'text-bg-secondary'}`}>{pinEnabled ? 'On' : 'Off'}</span>
+            )}
+          </div>
+          <p className="text-muted small mb-3">
+            Sign in with just a 6 to 8 digit PIN on this device. Other devices ask for your password once, then the PIN
+            works there too. Your password keeps working either way.
+          </p>
+          {pinForm ? (
+            <form onSubmit={submitPin}>
+              {pinForm === 'set' && (
+                <>
+                  <input type="password" className="form-control mb-2" placeholder={pinEnabled ? 'New PIN (6-8 digits)' : 'PIN (6-8 digits)'}
+                    inputMode="numeric" autoComplete="off" value={pinInput.pin}
+                    onChange={(e) => setPinInput({ ...pinInput, pin: digits(e.target.value) })} />
+                  <input type="password" className="form-control mb-2" placeholder="Confirm PIN" inputMode="numeric" autoComplete="off"
+                    value={pinInput.confirm} onChange={(e) => setPinInput({ ...pinInput, confirm: digits(e.target.value) })} />
+                </>
+              )}
+              <input type="password" className="form-control mb-3" placeholder="Current password" autoComplete="current-password"
+                maxLength={128} value={pinInput.currentPassword}
+                onChange={(e) => setPinInput({ ...pinInput, currentPassword: e.target.value })} />
+              <div className="d-flex gap-2">
+                <button className={`btn ${pinForm === 'disable' ? 'btn-danger' : 'btn-primary'}`} type="submit" disabled={busy === 'pin' || !pinValid}>
+                  {pinForm === 'disable' ? 'Turn off PIN' : pinEnabled ? 'Change PIN' : 'Turn on PIN'}
+                </button>
+                <button className="btn btn-outline-secondary" type="button" onClick={closePinForm}>Cancel</button>
+              </div>
+            </form>
+          ) : pinEnabled ? (
+            <div className="d-flex gap-2">
+              <button type="button" className="btn btn-outline-primary" onClick={() => setPinForm('set')}>Change PIN</button>
+              <button type="button" className="btn btn-outline-danger" onClick={() => setPinForm('disable')}>Turn off</button>
+            </div>
+          ) : (
+            <button type="button" className="btn btn-primary" disabled={pinEnabled === null} onClick={() => setPinForm('set')}>Add security PIN</button>
+          )}
         </div>
       </section>
 

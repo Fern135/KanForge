@@ -67,6 +67,7 @@
 **Accounts**
 - Email and password sign-up and sign-in. You stay signed in for 14 days without activity
 - Edit your profile name, change your password and "sign out everywhere"
+- Optional security PIN (6 to 8 digits), off by default. Once added under Account & security, you sign in with just the PIN, without typing your email. It works on devices where you've turned it on or signed in with your password since; a new device asks for the password once
 
 **Security first**
 - Argon2id, rotating refresh tokens, CSRF protection, rate limits, strict CSP, and non-root read-only containers. See [Security](#security)
@@ -249,6 +250,8 @@ browser ──HTTPS──▶ nginx (web) ──▶ api (Express) ──▶ mongo
 - Refresh tokens rotate on every use, with reuse detection: replaying an old token revokes the whole session family.
 - Cookie endpoints require a double-submit CSRF token, and state-changing requests from a foreign `Origin` are rejected.
 - Signing out everywhere or changing your password immediately invalidates every outstanding access token.
+- The security PIN is off for new accounts. Adding, changing or removing it needs your current password. It's hashed with Argon2id, trivial PINs (111111, 123456, …) are rejected, and the PIN only works on a device remembered for that account.
+- PIN sign-in is tied to a remembered device: a random token in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to `/api/auth`, stored only as a SHA-256 hash, valid for 90 days, at most 10 per account. Turning the PIN off, changing your password or signing out everywhere forgets these devices (changing your password keeps the device you're on).
 
 **Abuse protection**
 - Every request is rate-limited, and the API counts it before reading the request body. nginx limits per IP. The API adds, in Redis:
@@ -256,7 +259,7 @@ browser ──HTTPS──▶ nginx (web) ──▶ api (Express) ──▶ mongo
   - per-user limits on board changes (300/min) and bulk imports (30 per 15 min)
   - stricter per-IP limits on sign-in, token refresh, password change, profile edits, "sign out everywhere" and invites
 - Health checks have their own in-memory limit, so they keep answering when Redis is down.
-- Login locks out per email+IP (after 5 failures) and per account (after 20).
+- Login locks out per email+IP (after 5 failures) and per account (after 20). PIN sign-in has its own, stricter counters: per email+IP after 5 failures and per account after 10.
 - Payloads are capped at 32 KB (256 KB for the bulk import endpoints), requests must be JSON, and there are per-board and per-list count limits.
 
 **Authorization**

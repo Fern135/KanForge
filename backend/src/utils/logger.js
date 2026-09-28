@@ -15,6 +15,7 @@ module.exports = pino({
       '*.password',
       '*.currentPassword',
       '*.newPassword',
+      '*.pin',
       '*.token',
     ],
     censor: '[REDACTED]',

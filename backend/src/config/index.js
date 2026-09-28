@@ -60,6 +60,12 @@ module.exports = Object.freeze({
     cookiePath: '/api/auth',
     cookieSecure: env.COOKIE_SECURE,
   }),
+  // Remembers a device for PIN-only sign-in. HttpOnly, and scoped like the refresh cookie.
+  pinDevice: Object.freeze({
+    cookieName: 'pd',
+    ttlMs: 90 * 24 * 60 * 60 * 1000,
+    max: 10,
+  }),
   lockout: Object.freeze({
     maxAttempts: 5,
     windowSeconds: 15 * 60,
