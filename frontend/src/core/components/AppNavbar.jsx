@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -6,21 +5,9 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../context/AuthContext';
 import { useApps } from '../context/AppsContext';
+import useDropdown from '../hooks/useDropdown';
 import Avatar from './Avatar';
 import Logo, { APP_NAME } from './Logo';
-
-// Open/close state for a dropdown that closes on any click outside it.
-function useDropdown() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!open) return undefined;
-    const close = (e) => !ref.current?.contains(e.target) && setOpen(false);
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [open]);
-  return { open, setOpen, ref };
-}
 
 const menuStyle = { right: 0, left: 'auto' };
 

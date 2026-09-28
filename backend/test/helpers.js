@@ -11,6 +11,8 @@ const migrations = [
   require('../migrations/20260928000001-user-security-pin'),
   require('../migrations/20260928000002-pin-devices'),
   require('../migrations/20260928000003-admin-and-settings'),
+  require('../migrations/20260929000001-notes'),
+  require('../migrations/20260929000002-note-folders'),
 ];
 
 if (!config.isTest || !new URL(config.mongoUri).pathname.endsWith('_test')) {

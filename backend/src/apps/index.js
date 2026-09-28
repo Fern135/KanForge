@@ -4,4 +4,5 @@
 // core, never on another app. See apps/boards/index.js for the manifest shape.
 module.exports = [
   require('./boards'),
+  require('./notes'),
 ];

@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import { faTableColumns } from '@fortawesome/free-solid-svg-icons';
+import { faTableColumns, faNoteSticky } from '@fortawesome/free-solid-svg-icons';
 
 // Every app the frontend knows. Each one lives at /<id>/*, loads only when
 // opened, and may import from core but never from another app. The server
@@ -10,5 +10,11 @@ export const APPS = [
     name: 'Boards',
     icon: faTableColumns,
     Routes: lazy(() => import('./boards/routes')),
+  },
+  {
+    id: 'notes',
+    name: 'Notes',
+    icon: faNoteSticky,
+    Routes: lazy(() => import('./notes/routes')),
   },
 ];

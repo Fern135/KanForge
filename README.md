@@ -15,7 +15,7 @@
 
 **Apps**
 - Kanforge is a set of apps behind one sign-in. The home screen shows a tile for each app, and the navbar's app switcher moves between them
-- Boards is the first app. More are planned (notes, files, mail, office documents)
+- Apps so far: Boards and Notes. More are planned (files, mail, office documents)
 - Admins can turn each app on or off for everyone. A turned-off app is hidden and its data is kept
 
 **Boards**
@@ -68,6 +68,15 @@
   - [x] Call Ana
   ```
   `{ "items": [...] }` also works. The panel shows how many items it found before you import. An import is all-or-nothing: if it would take the checklist past 100 items, nothing is added.
+
+**Notes**
+- Rich-text notes: headings, bold, italic, underline, strikethrough, links, lists, checklists, quotes and code blocks. Markdown shortcuts work while typing (`# `, `- `, `[] `)
+- Saves automatically as you type. If the same note changed in another tab or device, you choose which version to keep instead of one silently overwriting the other
+- Nested folders (up to 10 levels, 500 per account) in a sidebar tree. Open a folder with or without its subfolders, or see Unfiled notes. Move notes and folders with drag and drop or "Move to…". Deleting a folder moves its notes to the trash
+- Search titles and text, filter by tag, and pin notes to the top
+- Archive, and a trash that deletes notes after 30 days (or empty it yourself)
+- Import Markdown files or a whole folder such as an Obsidian vault, keeping its subfolders (a leading `# Heading` becomes the title, front-matter `tags:` become tags). Download one note as Markdown, or export everything as a .zip that keeps the folder structure
+- Up to 2,000 notes per account, including the trash
 
 **Accounts**
 - Email and password sign-up and sign-in. You stay signed in for 14 days without activity
@@ -269,11 +278,11 @@ browser ──HTTPS──▶ nginx (web) ──▶ api (Express) ──▶ mongo
 **Abuse protection**
 - Every request is rate-limited, and the API counts it before reading the request body. nginx limits per IP. The API adds, in Redis:
   - a per-IP limit on every route (600/min), including unknown paths
-  - per-user limits on board changes (300/min) and bulk imports (30 per 15 min)
+  - per-user limits on board and note changes (300/min each) and on bulk imports and exports (30 per 15 min per app)
   - stricter per-IP limits on sign-in, token refresh, password change, profile edits, "sign out everywhere" and invites
 - Health checks have their own in-memory limit, so they keep answering when Redis is down.
 - Login locks out per email+IP (after 5 failures) and per account (after 20). PIN sign-in has its own, stricter counters: per email+IP after 5 failures and per account after 10.
-- Payloads are capped at 32 KB (256 KB for the bulk import endpoints), requests must be JSON, and there are per-board and per-list count limits.
+- Payloads are capped at 32 KB (256 KB for the bulk import endpoints and Notes), requests must be JSON, and there are per-board and per-list count limits.
 
 **Authorization**
 - Every board-scoped query filters by a board the caller is a member of, so IDs from other boards don't work (IDOR).
@@ -286,7 +295,7 @@ browser ──HTTPS──▶ nginx (web) ──▶ api (Express) ──▶ mongo
 - Strict Zod schemas reject unknown keys, which blocks mass assignment and `__proto__` payloads.
 - Mongoose `sanitizeFilter` stops NoSQL operator injection, and MongoDB `$jsonSchema` validators enforce document shape in the database too.
 - Responses use allow-list serializers. Errors are generic, with no stack traces, and logs redact credentials.
-- User content is rendered only as text, never as HTML.
+- User content is rendered only as text, never as HTML. Notes are stored as the editor's JSON document, and the server rebuilds every note from an allow-list of elements before saving: unknown elements are refused, unknown attributes dropped, and links other than http(s) and mailto removed.
 
 **Infrastructure**
 - MongoDB has separate least-privilege users: the API gets `readWrite` only, and migrations get `dbAdmin`.
