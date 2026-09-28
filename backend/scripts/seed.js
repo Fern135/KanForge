@@ -4,12 +4,12 @@
 // ALLOW_SEED=true is set explicitly.
 const crypto = require('node:crypto');
 const argon2 = require('argon2');
-const config = require('../src/config');
-const { connectMongo, disconnectMongo } = require('../src/db/mongo');
-const User = require('../src/models/User');
-const Board = require('../src/models/Board');
-const List = require('../src/models/List');
-const Card = require('../src/models/Card');
+const config = require('../src/core/config');
+const { connectMongo, disconnectMongo } = require('../src/core/db/mongo');
+const User = require('../src/core/models/User');
+const Board = require('../src/apps/boards/models/Board');
+const List = require('../src/apps/boards/models/List');
+const Card = require('../src/apps/boards/models/Card');
 
 async function main() {
   if (config.isProd && process.env.ALLOW_SEED !== 'true') {

@@ -5,22 +5,26 @@ const express = require('express');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const pinoHttp = require('pino-http');
-const config = require('./config');
-const logger = require('./utils/logger');
-const { mongoose } = require('./db/mongo');
-const { redis } = require('./db/redis');
-const { createLimiters } = require('./middleware/rateLimit');
-const { originCheck } = require('./middleware/csrf');
-const { requireAuth } = require('./middleware/auth');
-const { notFound, errorHandler } = require('./middleware/errorHandler');
-const authRouter = require('./routes/auth');
-const boardsRouter = require('./routes/boards');
+const config = require('./core/config');
+const logger = require('./core/utils/logger');
+const { mongoose } = require('./core/db/mongo');
+const { redis } = require('./core/db/redis');
+const { createLimiters } = require('./core/middleware/rateLimit');
+const { originCheck } = require('./core/middleware/csrf');
+const { requireAuth, requireAdmin, requireAppEnabled } = require('./core/middleware/auth');
+const { notFound, errorHandler } = require('./core/middleware/errorHandler');
+const { createAppState } = require('./core/services/appState');
+const authRouter = require('./core/routes/auth');
+const adminRouter = require('./core/routes/admin');
+const appsRouter = require('./core/routes/apps');
+const manifests = require('./apps');
 
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH']);
 
 function createApp() {
   const app = express();
   const limiters = createLimiters();
+  const appState = createAppState(manifests);
 
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
@@ -70,17 +74,19 @@ function createApp() {
     }
     next();
   });
-  // Bulk imports carry many items per request, so they get a larger (still bounded) limit.
-  app.use(
-    ['/api/boards/:boardId/cards/bulk', '/api/boards/:boardId/cards/:cardId/checklist/bulk'],
-    express.json({ limit: '256kb', strict: true }),
-  );
+  // Some app routes (bulk imports) carry many items, so they get a larger (still bounded) limit.
+  const largeBodyPaths = manifests.flatMap((m) => (m.largeBodyPaths || []).map((p) => `/api/${m.id}${p}`));
+  if (largeBodyPaths.length) app.use(largeBodyPaths, express.json({ limit: '256kb', strict: true }));
   app.use(express.json({ limit: '32kb', strict: true }));
   app.use(cookieParser());
   app.use(originCheck);
 
   app.use('/api/auth', authRouter(limiters));
-  app.use('/api/boards', requireAuth, limiters.writes, boardsRouter(limiters));
+  app.use('/api/apps', requireAuth, appsRouter({ appState }));
+  app.use('/api/admin', requireAuth, requireAdmin, adminRouter({ limiters, appState }));
+  for (const m of manifests) {
+    app.use(`/api/${m.id}`, requireAuth, requireAppEnabled(appState, m.id), m.createRouter({ limiters }));
+  }
 
   app.use(notFound);
   app.use(errorHandler);

@@ -1,9 +1,9 @@
 'use strict';
 
-const config = require('./config');
-const logger = require('./utils/logger');
-const { connectMongo, disconnectMongo } = require('./db/mongo');
-const { connectRedis, disconnectRedis } = require('./db/redis');
+const config = require('./core/config');
+const logger = require('./core/utils/logger');
+const { connectMongo, disconnectMongo } = require('./core/db/mongo');
+const { connectRedis, disconnectRedis } = require('./core/db/redis');
 const { createApp } = require('./app');
 
 async function main() {

@@ -139,6 +139,34 @@ body { -webkit-font-smoothing: antialiased; }
   }
 }
 
+// Home launcher: one tile per app.
+.app-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  height: 120px;
+  padding: 1rem;
+  border-radius: $border-radius-lg;
+  background: #fff;
+  color: $navy;
+  text-decoration: none;
+  box-shadow: 0 4px 12px rgba(9, 30, 66, 0.1);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  &:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(9, 30, 66, 0.2); color: $navy; }
+}
+.app-tile-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: $border-radius;
+  background: $navy;
+  color: $green;
+  font-size: 1.1rem;
+}
+
 $backgrounds: (
   "navy": linear-gradient(135deg, #0b2545 0%, #13315c 100%),
   "green": linear-gradient(135deg, #2e8b57 0%, #5cc983 100%),

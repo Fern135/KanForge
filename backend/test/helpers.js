@@ -1,15 +1,16 @@
 'use strict';
 
 const request = require('supertest');
-const config = require('../src/config');
-const { connectMongo, disconnectMongo, mongoose } = require('../src/db/mongo');
-const { redis, connectRedis, disconnectRedis } = require('../src/db/redis');
+const config = require('../src/core/config');
+const { connectMongo, disconnectMongo, mongoose } = require('../src/core/db/mongo');
+const { redis, connectRedis, disconnectRedis } = require('../src/core/db/redis');
 const { createApp } = require('../src/app');
 const migrations = [
   require('../migrations/20260926000001-initial-schema'),
   require('../migrations/20260927000001-card-checklist-settings'),
   require('../migrations/20260928000001-user-security-pin'),
   require('../migrations/20260928000002-pin-devices'),
+  require('../migrations/20260928000003-admin-and-settings'),
 ];
 
 if (!config.isTest || !new URL(config.mongoUri).pathname.endsWith('_test')) {

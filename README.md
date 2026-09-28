@@ -5,13 +5,18 @@
 <h1 align="center">Kanforge</h1>
 
 <p align="center">
-  Open-source, self-hosted kanban boards that you run on your own machine or server.<br>
-  Boards, lists and drag-and-drop cards, with a hardened security setup.
+  An open-source, self-hosted suite of apps that you run on your own machine or server.<br>
+  It starts with Boards: lists and drag-and-drop cards, with a hardened security setup.
 </p>
 
 ---
 
 ## Features
+
+**Apps**
+- Kanforge is a set of apps behind one sign-in. The home screen shows a tile for each app, and the navbar's app switcher moves between them
+- Boards is the first app. More are planned (notes, files, mail, office documents)
+- Admins can turn each app on or off for everyone. A turned-off app is hidden and its data is kept
 
 **Boards**
 - Create, rename and delete boards (up to 100 per user)
@@ -67,6 +72,7 @@
 **Accounts**
 - Email and password sign-up and sign-in. You stay signed in for 14 days without activity
 - Edit your profile name, change your password and "sign out everywhere"
+- The first account created on a new install becomes the admin. Admins can make other users admins, and there's always at least one
 - Optional security PIN (6 to 8 digits), off by default. Once added under Account & security, you sign in with just the PIN, without typing your email. It works on devices where you've turned it on or signed in with your password since; a new device asks for the password once
 
 **Security first**
@@ -216,12 +222,18 @@ If another proxy or load balancer sits in front of nginx, adjust `TRUST_PROXY` i
 ├── docker-compose.dev.yml    Dev overlay (hot reload)
 ├── docker/                   MongoDB user init, TLS certificates
 ├── backend/                  Express API
-│   ├── src/                  config, db, models, middleware, routes, services
+│   ├── src/
+│   │   ├── core/             Shared by every app: config, db, auth, admin, rate limits
+│   │   ├── apps/             One folder per app (apps/boards), listed in apps/index.js
+│   │   └── app.js            Mounts core routes and each app at /api/<app>
 │   ├── migrations/           migrate-mongo migrations
 │   ├── scripts/seed.js       Demo data
 │   └── test/                 Integration and security tests
 └── frontend/                 React app
-    ├── src/                  api, context, components, pages, styles
+    ├── src/
+    │   ├── core/             Sign-in, account, admin, home, navbar, shared components
+    │   ├── apps/             One folder per app, listed in apps/index.js, each at /<app>
+    │   └── styles/           Theme
     └── nginx/                Production web server config
 ```
 
@@ -233,6 +245,7 @@ browser ──HTTPS──▶ nginx (web) ──▶ api (Express) ──▶ mongo
                                       └────────────▶ redis
 ```
 
+- Each app depends only on `core`, never on another app. Core tells apps about account changes through events (for example `user.renamed`), so it never imports app code.
 - Only nginx publishes ports. MongoDB and Redis sit on an `internal` Docker network with no route out.
 - Redis caches board payloads and user lookups. The caches are invalidated on every write, including when a member changes their name. Redis also stores rate-limit counters and login-lockout state.
 - Cards and lists use fractional positions, so a drag writes a single document. The server renumbers a list only when gaps run out.
@@ -266,6 +279,8 @@ browser ──HTTPS──▶ nginx (web) ──▶ api (Express) ──▶ mongo
 - Every board-scoped query filters by a board the caller is a member of, so IDs from other boards don't work (IDOR).
 - Non-members get 404, not 403, so board IDs can't be probed.
 - Owner-only actions are enforced on the server.
+- The admin API needs the admin role, which is checked on every request. A demotion takes effect within seconds, and removing the last admin is refused. Two sign-ups racing on a new install can't both become admin.
+- A turned-off app answers 404 on every route.
 
 **Input and output**
 - Strict Zod schemas reject unknown keys, which blocks mass assignment and `__proto__` payloads.
@@ -294,6 +309,11 @@ Found a vulnerability? Please report it privately to the maintainer instead of o
 2. Make your change. Schema changes go in a new migration (`make migrate-create name=...`).
 3. Run `./run.sh test` and check that everything passes.
 4. Open a pull request.
+
+**Adding an app**
+1. Backend: create `backend/src/apps/<id>/index.js` exporting `id`, `name`, `description`, `defaultEnabled` and `createRouter({ limiters })`, and add it to `apps/index.js`. Its routes are served at `/api/<id>` behind sign-in and the on/off switch.
+2. Frontend: create `frontend/src/apps/<id>/routes.jsx` and add an entry (`id`, `name`, `icon`, lazy `Routes`) to `apps/index.js`. It's served at `/<id>/*`.
+3. Only import from `core`. Anything two apps need goes in `core`.
 
 ## License
 

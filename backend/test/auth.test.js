@@ -3,7 +3,7 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { trusted } = require('mongoose');
-const Session = require('../src/models/Session');
+const Session = require('../src/core/models/Session');
 const { setup, teardown, api, registerUser, auth, cookiesFrom, flushRedis } = require('./helpers');
 
 const refresh = (cookies) =>
