@@ -81,6 +81,64 @@ describe('office presentations', () => {
     assert.equal((await api().get(`${D}?q=say%20hello`).set(auth(alice.token))).body.documents.length, 1);
   });
 
+  it('keeps tables, charts, icons, effects, animations, transitions and the footer, and drops anything unsafe', async () => {
+    const content = deck([
+      {
+        id: 's1',
+        background: '#112233',
+        background2: '#445566',
+        bgAngle: 90,
+        transition: 'push',
+        hidden: true,
+        elements: [
+          {
+            id: 't1', type: 'table', x: 0, y: 0, w: 400, h: 120, rows: 2, cols: 2, header: true, headerFill: 'none', border: '#ABCDEF',
+            cells: [['Name', 'Score'], ['Ann', 42, 'extra']], style: { size: 14, onclick: 'x' },
+          },
+          {
+            id: 'c1', type: 'chart', x: 0, y: 200, w: 400, h: 240, chart: 'donut', title: 'Mix', legend: false,
+            labels: ['A', 'B', 'C'], series: [{ name: 'S', values: [1, 'two', Infinity, 4] }],
+          },
+          { id: 'i1', type: 'icon', x: 500, y: 0, w: 96, h: 96, icon: 'rocket', color: '#FF0000' },
+          { id: 'i2', type: 'icon', x: 600, y: 0, w: 96, h: 96, icon: 'not-an-icon' },
+          {
+            id: 'x1', type: 'shape', shape: 'heart', x: 0, y: 0, w: 50, h: 50, rotation: -90, flipH: true, flipV: 'yes', opacity: 0.02,
+            shadow: true, locked: true, group: 'g1', link: 'https://example.com/a', anim: 'fly', animOrder: 3,
+            style: { s: true, highlight: '#FFFF00', spacing: 1.5 },
+          },
+          { id: 'x2', type: 'text', x: 0, y: 0, w: 50, h: 50, text: 'bad link', link: 'javascript:alert(1)', anim: 'explode', group: 'Bad Group!' },
+          { id: 'x3', type: 'text', ph: 'picture', x: 0, y: 0, w: 50, h: 50, text: '' },
+        ],
+      },
+    ], { footer: { number: true, text: 'Kanforge\u0000 deck', skipFirst: false, evil: 1 } });
+
+    const c = (await post(alice, { kind: 'slides', content }).expect(201)).body.document.content;
+    const s = c.slides[0];
+    assert.deepEqual(
+      { background: s.background, background2: s.background2, bgAngle: s.bgAngle, transition: s.transition, hidden: s.hidden },
+      { background: '#112233', background2: '#445566', bgAngle: 90, transition: 'push', hidden: true },
+    );
+    assert.deepEqual(c.footer, { number: true, text: 'Kanforge deck', skipFirst: false });
+    const [table, chart, icon, fallbackIcon, shape, badText, picture] = s.elements;
+    assert.deepEqual(table.cells, [['Name', 'Score'], ['Ann', '']]);
+    assert.equal(table.headerFill, 'none');
+    assert.equal(table.border, '#abcdef');
+    assert.deepEqual(table.style, { size: 14 });
+    assert.equal(chart.chart, 'donut');
+    assert.deepEqual(chart.series, [{ name: 'S', values: [1, 0, 0] }], 'values match the labels, non-numbers become 0');
+    assert.equal(chart.legend, false);
+    assert.deepEqual([icon.icon, icon.color, fallbackIcon.icon], ['rocket', '#ff0000', 'star']);
+    assert.deepEqual(
+      { rotation: shape.rotation, flipH: shape.flipH, flipV: shape.flipV, opacity: shape.opacity, shadow: shape.shadow, locked: shape.locked, group: shape.group, link: shape.link, anim: shape.anim, animOrder: shape.animOrder },
+      { rotation: 270, flipH: true, flipV: undefined, opacity: 0.1, shadow: true, locked: true, group: 'g1', link: 'https://example.com/a', anim: 'fly', animOrder: 3 },
+    );
+    assert.deepEqual(shape.style, { highlight: '#ffff00', s: true, spacing: 1.5 });
+    assert.equal(badText.link, undefined, 'script links are dropped');
+    assert.equal(badText.anim, undefined);
+    assert.equal(badText.group, undefined);
+    assert.equal(picture.ph, 'picture');
+  });
+
   it('refuses decks that are empty or too big', async () => {
     await post(alice, { kind: 'slides', content: deck([]) }).expect(400);
     await post(alice, { kind: 'slides', content: { slides: 'x' } }).expect(400);
@@ -88,6 +146,7 @@ describe('office presentations', () => {
     await post(alice, { kind: 'slides', content: deck([{ elements: Array.from({ length: 151 }, () => ({ type: 'text' })) }]) }).expect(400);
     await post(alice, { kind: 'slides', content: deck([{ elements: [{ type: 'text', text: 'x'.repeat(5001) }] }]) }).expect(400);
     await post(alice, { kind: 'slides', content: deck([{ notes: 'x'.repeat(10_001), elements: [] }]) }).expect(400);
+    await post(alice, { kind: 'slides', content: deck([{ elements: [{ type: 'table', rows: 1, cols: 1, cells: [['x'.repeat(1001)]] }] }]) }).expect(400);
   });
 
   it('saves edits with versioning, like the other kinds', async () => {

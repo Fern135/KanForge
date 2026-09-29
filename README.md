@@ -111,16 +111,17 @@
 - Up to 50 sheets, 10,000 rows × 200 columns per sheet and 100,000 filled cells per spreadsheet
 
 **Office: Slides**
-- A presentation editor that looks and works like PowerPoint or Impress, with a slide panel, menu bar and toolbar
-- Layouts for new slides (title, title and content, two content, section header, title only, blank), and six themes. Widescreen (16:9) or standard (4:3) slides
-- Text boxes with fonts, sizes, bold/italic/underline, colours, alignment and bullet or numbered lists. Shapes (rectangle, rounded rectangle, oval, triangle, arrow, line) with fill and outline, and text inside. Images (insert, paste or drag in)
-- Move items by dragging, with snapping to the slide and to other items (hold Alt to turn it off), resize them from their handles (Shift keeps the proportions), nudge them with the arrow keys, and bring them forward or send them back. Cut, copy, paste and duplicate, and undo and redo
-- Reorder slides by dragging their thumbnails. Duplicate, delete and change each slide's background
-- Speaker notes under each slide
-- Present full screen from the beginning (F5) or the current slide (Shift+F5). Arrow keys, space or a click move through the slides
-- Save as PowerPoint (.pptx), or print or save as PDF with one slide per page. Saves automatically, and if the same presentation changed elsewhere, you choose which version to keep
+- A presentation editor that looks and works like PowerPoint or Impress, with a slide panel, menu bar, toolbar and a slide sorter view
+- Ten layouts for new slides (title, title and content, two content, comparison, section header, picture with caption, quote, big number, title only, blank) and twelve themes, some with gradients and accent details. Widescreen (16:9) or standard (4:3) slides, solid or gradient backgrounds per slide, and slide numbers and a footer
+- Text boxes with fonts, sizes, bold/italic/underline/strikethrough, colours, highlight, alignment, line spacing and bullet or numbered lists
+- 21 shapes (rectangles, ovals, triangles, stars, polygons, arrows, chevron, heart, speech bubble, line…) with fill, outline and text inside; images (insert, paste, drag in, or click a picture placeholder) with rounded corners; tables; column, bar, line, area, pie and donut charts with a data editor; and 67 icons
+- Transparency, shadows, rotation (drag the handle; Shift snaps to 15°), flipping, and links that open during the slide show
+- Move items with snapping to the slide and to other items (Alt turns it off), resize from their handles (Shift keeps the proportions), nudge with the arrow keys, align and distribute, group, lock, and bring forward or send back. Cut, copy, paste, duplicate, undo and redo. Zoom in and out
+- Reorder slides by dragging their thumbnails, and duplicate, hide or delete them
+- Slide transitions (fade, push, wipe, zoom, cover) and entrance animations (appear, fade, fly in, zoom, wipe) that play in order as you click
+- Present full screen from the beginning (F5) or the current slide (Shift+F5), or with presenter view (Alt+F5): a second window with the current and next slide, speaker notes and a timer
+- Open PowerPoint (.pptx) files: text and its formatting, shapes, pictures, tables, groups, backgrounds, hidden slides and speaker notes (charts and SmartArt are left out). Save as PowerPoint, with charts as real PowerPoint charts, or print or save as PDF with one slide per page. Saves automatically, and if the same presentation changed elsewhere, you choose which version to keep
 - Up to 300 slides per presentation and 150 items per slide
-
 **Accounts**
 - Email and password sign-up and sign-in. You stay signed in for 14 days without activity
 - Edit your profile name, change your password and "sign out everywhere"

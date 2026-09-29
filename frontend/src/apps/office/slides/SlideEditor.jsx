@@ -2,21 +2,25 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faFilePowerpoint, faFolder, faCircleExclamation, faRotateLeft, faArrowLeft, faEllipsisVertical, faPlay, faNoteSticky, faPlus,
+  faFilePowerpoint, faFolder, faCircleExclamation, faRotateLeft, faArrowLeft, faEllipsisVertical, faPlay, faNoteSticky,
+  faPlus, faMinus, faLock, faEyeSlash, faTableCells, faSquare,
 } from '@fortawesome/free-solid-svg-icons';
 import { officeApi } from '../api';
 import useDocumentSync from '../useDocumentSync';
 import { uploadImageFile } from '../docs/images';
-import { DropMenu, ColorGrid } from '../docs/ui';
-import SlideView, { SlideElement } from './SlideView';
+import { DropMenu } from '../docs/ui';
+import SlideView, { SlideElement, boxStyle } from './SlideView';
 import SlideMenuBar from './SlideMenuBar';
 import SlideToolbar from './SlideToolbar';
 import Present from './Present';
+import {
+  ChartDataModal, IconPicker, LinkModal, FooterModal, BackgroundModal,
+} from './SlideModals';
 import { printSlides } from './printSlides';
 import {
-  fromContent, toContent, makeSlide, newId, slideSize, themeOf, textCss, LIMITS, SIZES,
+  fromContent, toContent, makeSlide, makeTable, makeChart, newId, slideSize, themeOf, textCss, groupIds, animated,
+  LIMITS, SIZES,
 } from './model';
-import Modal from '../../../core/components/Modal';
 import MoveToFolderModal from '../../../core/components/folders/MoveToFolderModal';
 import { buildTree } from '../../../core/components/folders/tree';
 import Spinner from '../../../core/components/Spinner';
@@ -30,6 +34,7 @@ const STATUS = { saved: 'Saved', unsaved: 'Editing…', saving: 'Saving…', err
 const safeFileName = (title) => (title || 'Untitled presentation').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim().slice(0, 100) || 'Untitled presentation';
 const MAX_HISTORY = 100;
 const SIZE_STEPS = [10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 54, 60, 72, 80, 96];
+const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const MIN_SIZE = 8;
 const SNAP_PX = 6;
@@ -37,7 +42,14 @@ const EMPTY = new Set();
 const NO_STYLE = Object.freeze({});
 
 const round = (n) => Math.round(n * 10) / 10;
-const hasText = (el) => el.type === 'text' || (el.type === 'shape' && el.shape !== 'line');
+const rad = (deg) => (deg * Math.PI) / 180;
+const rotate = (x, y, deg) => {
+  const a = rad(deg);
+  return { x: x * Math.cos(a) - y * Math.sin(a), y: x * Math.sin(a) + y * Math.cos(a) };
+};
+// Items whose text can be edited in place, and items with a text style.
+const typesIn = (el) => el.type === 'text' || (el.type === 'shape' && el.shape !== 'line');
+const hasStyle = (el) => typesIn(el) || el.type === 'table' || el.type === 'chart';
 
 // ---- Pure deck edits ----
 
@@ -51,16 +63,30 @@ function withElements(deck, index, ids, fn) {
   return withSlide(deck, index, (s) => ({ ...s, elements: s.elements.map((el) => (ids.has(el.id) ? fn(el) : el)) }));
 }
 
-function cloneElement(el, dx = 0, dy = 0) {
-  return { ...el, id: newId('e'), x: round(el.x + dx), y: round(el.y + dy), style: { ...el.style } };
+// Copies with new ids. Copied groups stay grouped, as new groups.
+function cloneElements(els, dx = 0, dy = 0) {
+  const groups = new Map();
+  return els.map((el) => {
+    const copy = { ...el, id: newId('e'), x: round(el.x + dx), y: round(el.y + dy), style: { ...el.style } };
+    if (el.group) {
+      if (!groups.has(el.group)) groups.set(el.group, newId('g'));
+      copy.group = groups.get(el.group);
+    }
+    if (el.cells) copy.cells = el.cells.map((r) => [...r]);
+    if (el.series) copy.series = el.series.map((s) => ({ ...s, values: [...s.values] }));
+    return copy;
+  });
 }
 
-function resizeBox(o, dir, dx, dy, keepRatio) {
+// Resizes in the item's own (unrotated) frame, then moves it so the opposite
+// edge stays where it was on the slide.
+function resizeBox(o, dir, dx, dy, keepRatio, rotation = 0) {
+  const d = rotate(dx, dy, -rotation);
   let { x, y, w, h } = o;
-  if (dir.includes('e')) w = o.w + dx;
-  if (dir.includes('s')) h = o.h + dy;
-  if (dir.includes('w')) { w = o.w - dx; x = o.x + dx; }
-  if (dir.includes('n')) { h = o.h - dy; y = o.y + dy; }
+  if (dir.includes('e')) w = o.w + d.x;
+  if (dir.includes('s')) h = o.h + d.y;
+  if (dir.includes('w')) { w = o.w - d.x; x = o.x + d.x; }
+  if (dir.includes('n')) { h = o.h - d.y; y = o.y + d.y; }
   if (keepRatio && dir.length === 2 && o.h > 0) {
     const ratio = o.w / o.h;
     if (w / h > ratio) {
@@ -80,6 +106,12 @@ function resizeBox(o, dir, dx, dy, keepRatio) {
   if (h < MIN_SIZE) {
     if (dir.includes('n')) y = o.y + o.h - MIN_SIZE;
     h = MIN_SIZE;
+  }
+  if (rotation) {
+    // The centre moved by this much in the item's frame; turn that onto the slide.
+    const c = rotate(x + w / 2 - (o.x + o.w / 2), y + h / 2 - (o.y + o.h / 2), rotation);
+    x = o.x + o.w / 2 + c.x - w / 2;
+    y = o.y + o.h / 2 + c.y - h / 2;
   }
   return { x: round(x), y: round(y), w: round(w), h: round(h) };
 }
@@ -101,11 +133,7 @@ function snap(bounds, dx, dy, targets, threshold) {
     lines[key].push(best.t);
     return delta + best.d;
   };
-  return {
-    dx: axis(bounds.x, bounds.w, dx, targets.x, 'x'),
-    dy: axis(bounds.y, bounds.h, dy, targets.y, 'y'),
-    guides: lines,
-  };
+  return { dx: axis(bounds.x, bounds.w, dx, targets.x, 'x'), dy: axis(bounds.y, bounds.h, dy, targets.y, 'y'), guides: lines };
 }
 
 function boundsOf(boxes) {
@@ -114,7 +142,40 @@ function boundsOf(boxes) {
   return { x, y, w: Math.max(...boxes.map((b) => b.x + b.w)) - x, h: Math.max(...boxes.map((b) => b.y + b.h)) - y };
 }
 
-function useElementWidth(ref) {
+// Table rows and columns, added or removed around the cell being edited.
+function tableEdit(el, op, at) {
+  const cells = el.cells.map((r) => [...r]);
+  const r = Math.min(at?.r ?? el.rows - 1, el.rows - 1);
+  const c = Math.min(at?.c ?? el.cols - 1, el.cols - 1);
+  const blankRow = () => Array.from({ length: el.cols }, () => '');
+  switch (op) {
+    case 'rowAbove':
+    case 'rowBelow':
+      if (el.rows >= LIMITS.tableRows) return el;
+      cells.splice(op === 'rowAbove' ? r : r + 1, 0, blankRow());
+      return { ...el, cells, rows: el.rows + 1, h: round(el.h + el.h / el.rows) };
+    case 'colLeft':
+    case 'colRight':
+      if (el.cols >= LIMITS.tableCols) return el;
+      cells.forEach((row) => row.splice(op === 'colLeft' ? c : c + 1, 0, ''));
+      return { ...el, cells, cols: el.cols + 1 };
+    case 'deleteRow':
+      if (el.rows < 2) return el;
+      cells.splice(r, 1);
+      return { ...el, cells, rows: el.rows - 1, h: round(el.h - el.h / el.rows) };
+    case 'deleteCol':
+      if (el.cols < 2) return el;
+      cells.forEach((row) => row.splice(c, 1));
+      return { ...el, cells, cols: el.cols - 1 };
+    case 'header':
+      return { ...el, header: !el.header };
+    default:
+      return el;
+  }
+}
+
+// The element's size. `key` re-attaches when the element is replaced (switching views).
+function useElementSize(ref, key) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   useLayoutEffect(() => {
     const el = ref.current;
@@ -122,7 +183,7 @@ function useElementWidth(ref) {
     const ro = new ResizeObserver(([entry]) => setSize({ w: entry.contentRect.width, h: entry.contentRect.height }));
     ro.observe(el);
     return () => ro.disconnect();
-  }, [ref]);
+  }, [ref, key]);
   return size;
 }
 
@@ -147,9 +208,9 @@ function usePref(key, fallback) {
   return [value, set];
 }
 
-// ---- Slide panel (thumbnails) ----
+// ---- Slide thumbnails: the side panel and the slide sorter ----
 
-function SlidePanel({ look, deck, readOnly, onSelect, onMove, a }) {
+function Thumbnails({ look, deck, readOnly, width, onSelect, onOpen, onMove, a, className }) {
   const drag = useRef(null);
   const [over, setOver] = useState(null);
   const activeRef = useRef(null);
@@ -159,26 +220,31 @@ function SlidePanel({ look, deck, readOnly, onSelect, onMove, a }) {
   }, [deck.active]);
 
   return (
-    <div className="slide-panel" role="listbox" aria-label="Slides" tabIndex={0}
+    <div className={className} role="listbox" aria-label="Slides" tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+        if (step) {
           e.preventDefault();
-          onSelect(Math.max(0, Math.min(deck.slides.length - 1, deck.active + (e.key === 'ArrowDown' ? 1 : -1))));
+          onSelect(Math.max(0, Math.min(deck.slides.length - 1, deck.active + step)));
         } else if ((e.key === 'Delete' || e.key === 'Backspace') && !readOnly) {
           e.preventDefault();
           a.deleteSlide();
+        } else if (e.key === 'Enter' && onOpen) {
+          e.preventDefault();
+          onOpen(deck.active);
         }
       }}>
       {deck.slides.map((slide, i) => (
         <div
           key={slide.id}
           ref={i === deck.active ? activeRef : undefined}
-          className={`slide-thumb${i === deck.active ? ' active' : ''}${over === i ? ' drop-target' : ''}`}
+          className={`slide-thumb${i === deck.active ? ' active' : ''}${over === i ? ' drop-target' : ''}${slide.hidden ? ' is-hidden' : ''}`}
           role="option"
           aria-selected={i === deck.active}
-          aria-label={`Slide ${i + 1}`}
+          aria-label={`Slide ${i + 1}${slide.hidden ? ' (hidden)' : ''}`}
           draggable={!readOnly}
           onClick={() => onSelect(i)}
+          onDoubleClick={() => onOpen?.(i)}
           onDragStart={(e) => {
             drag.current = i;
             e.dataTransfer.effectAllowed = 'move';
@@ -200,13 +266,17 @@ function SlidePanel({ look, deck, readOnly, onSelect, onMove, a }) {
             setOver(null);
           }}
         >
-          <span className="slide-thumb-num">{i + 1}</span>
-          <SlideView deck={look} slide={slide} width={168} />
+          <span className="slide-thumb-num">
+            {i + 1}
+            {slide.hidden && <FontAwesomeIcon icon={faEyeSlash} className="d-block mt-1" title="Hidden in the slide show" />}
+          </span>
+          <SlideView deck={look} slide={slide} index={i} width={width} />
           {!readOnly && (
             <DropMenu title="Slide actions" buttonClass="slide-thumb-menu" icon={faEllipsisVertical} className="slide-thumb-actions"
               items={[
                 { label: 'New slide after', onClick: () => { onSelect(i); a.newSlide('content'); } },
                 { label: 'Duplicate slide', onClick: () => { onSelect(i); a.duplicateSlide(); } },
+                { label: slide.hidden ? 'Show slide' : 'Hide slide', onClick: () => { onSelect(i); a.toggleHidden(); } },
                 { label: 'Move up', disabled: i === 0, onClick: () => onMove(i, i - 1) },
                 { label: 'Move down', disabled: i === deck.slides.length - 1, onClick: () => onMove(i, i + 1) },
                 'divider',
@@ -221,6 +291,52 @@ function SlidePanel({ look, deck, readOnly, onSelect, onMove, a }) {
         </button>
       )}
     </div>
+  );
+}
+
+// Editing a table's cells in place. Tab and Shift+Tab move between cells.
+function TableEditor({ el, theme, onChange, onCell }) {
+  const refs = useRef([]);
+  const css = textCss({ ...el, type: 'text' }, theme);
+  const border = el.border === 'none' ? 'transparent' : el.border ?? (theme.dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.22)');
+  const headerFill = el.headerFill === 'none' ? 'transparent' : el.headerFill ?? theme.accent;
+  useEffect(() => {
+    refs.current[0]?.focus();
+  }, []);
+  return (
+    <table className="slide-table editing" style={{ fontFamily: css.fontFamily, fontSize: css.fontSize, color: css.color }}>
+      <tbody>
+        {el.cells.map((row, r) => (
+          <tr key={r} style={{ height: `${100 / el.rows}%` }}>
+            {row.map((cell, c) => {
+              const head = el.header && r === 0;
+              const i = r * el.cols + c;
+              return (
+                <td key={c} style={{ borderColor: border, background: head ? headerFill : el.fill && el.fill !== 'none' ? el.fill : 'transparent' }}>
+                  <textarea
+                    ref={(n) => { refs.current[i] = n; }}
+                    className="slide-cell-edit"
+                    value={cell}
+                    maxLength={LIMITS.cell}
+                    aria-label={`Row ${r + 1}, column ${c + 1}`}
+                    style={{ color: head && !el.style?.color && el.headerFill !== 'none' ? '#ffffff' : 'inherit', fontWeight: head ? 700 : 'inherit', textAlign: el.style?.align ?? 'left' }}
+                    onFocus={() => onCell({ r, c })}
+                    onChange={(e) => onChange(r, c, e.target.value)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Tab') return;
+                      e.preventDefault();
+                      const next = refs.current[i + (e.shiftKey ? -1 : 1)];
+                      next?.focus();
+                    }}
+                  />
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -240,24 +356,30 @@ function SlideWorkspace({ sync }) {
   const selectedRef = useRef(selected);
   const [editingId, setEditingState] = useState(null);
   const editingRef = useRef(null);
-  const [preview, setPreviewState] = useState(null);
+  const tableCell = useRef(null);
+  const [preview, setPreview] = useState(null);
   const [present, setPresent] = useState(null);
   const [modal, setModal] = useState(null);
   const [folderTree, setFolderTree] = useState(null);
   const [showNotes, setShowNotes] = usePref('notes', true);
+  const [view, setView] = useState('normal');
+  const [zoom, setZoom] = useState(1);
   const clip = useRef(null);
   const [, setClipTick] = useState(0);
   const surfaceRef = useRef(null);
   const stageRef = useRef(null);
   const fileInput = useRef(null);
-  const stage = useElementWidth(stageRef);
+  const pptxInput = useRef(null);
+  const pictureFor = useRef(null);
+  const stage = useElementSize(stageRef, view);
 
   const { w: W, h: H } = slideSize(deck);
   const theme = themeOf(deck);
-  const look = useMemo(() => ({ size: deck.size, theme: deck.theme }), [deck.size, deck.theme]);
+  const look = useMemo(() => ({ size: deck.size, theme: deck.theme, footer: deck.footer }), [deck.size, deck.theme, deck.footer]);
   const si = deck.active;
   const slide = deck.slides[si];
-  const width = Math.max(200, Math.min(stage.w - 48, ((stage.h - 48) * W) / H));
+  const fit = Math.max(200, Math.min(stage.w - 48, ((stage.h - 48) * W) / H));
+  const width = fit * zoom;
   const scale = width / W;
 
   const syncRef = useRef(sync);
@@ -280,14 +402,11 @@ function SlideWorkspace({ sync }) {
     setSelectedState(next);
   }, []);
 
-  // The text box being typed in, if any.
   const setEditing = useCallback((id) => {
     editingRef.current = id;
+    tableCell.current = null;
     setEditingState(id);
   }, []);
-  const setEditingId = setEditing;
-
-  const setPreview = useCallback((next) => setPreviewState(next), []);
 
   // Every change goes through here: remembered for undo, then saved.
   // Changes with the same `coalesce` key in a row (typing, nudging) undo as one.
@@ -310,47 +429,54 @@ function SlideWorkspace({ sync }) {
     setSelected(new Set([...selectedRef.current].filter((id) => ids.has(id))));
   }, [setSelected]);
 
-  const undo = useCallback(() => {
+  const travel = useCallback((from, to) => {
     const h = history.current;
-    if (!h.past.length) return;
-    h.future.push(deckRef.current);
-    const prev = h.past.pop();
-    h.lastKey = null;
-    setDeck(prev);
-    setEditingId(null);
-    keepSelection(prev);
-    syncRef.current.markDirty();
-    setTick((t) => t + 1);
-  }, [setDeck, keepSelection]);
-
-  const redo = useCallback(() => {
-    const h = history.current;
-    if (!h.future.length) return;
-    h.past.push(deckRef.current);
-    const next = h.future.pop();
+    if (!h[from].length) return;
+    h[to].push(deckRef.current);
+    const next = h[from].pop();
     h.lastKey = null;
     setDeck(next);
-    setEditingId(null);
+    setEditing(null);
     keepSelection(next);
     syncRef.current.markDirty();
     setTick((t) => t + 1);
-  }, [setDeck, keepSelection]);
+  }, [setDeck, setEditing, keepSelection]);
+  const undo = useCallback(() => travel('past', 'future'), [travel]);
+  const redo = useCallback(() => travel('future', 'past'), [travel]);
 
   const selectSlide = useCallback((i) => {
     const d = deckRef.current;
     if (i === d.active || i < 0 || i >= d.slides.length) return;
-    setEditingId(null);
+    setEditing(null);
     setSelected(EMPTY);
     // Which slide is open is saved with the next change, but isn't an undo step.
     setDeck({ ...d, active: i });
-  }, [setDeck, setSelected]);
+  }, [setDeck, setEditing, setSelected]);
 
-  // ---- Elements ----
+  // ---- Selection summary (drives the menus and toolbar) ----
 
   const selectedEls = slide.elements.filter((el) => selected.has(el.id));
-  const textEls = selectedEls.filter(hasText);
-  const shapeEls = selectedEls.filter((el) => el.type === 'shape');
-  const activeStyle = textEls[0]?.style ?? NO_STYLE;
+  const styled = selectedEls.filter(hasStyle);
+  const first = selectedEls[0];
+  const sel = {
+    count: selectedEls.length,
+    any: selectedEls.length > 0,
+    many: selectedEls.length > 1,
+    text: styled.length > 0,
+    style: styled[0]?.style ?? NO_STYLE,
+    fillable: selectedEls.some((el) => el.type === 'shape' || el.type === 'icon' || el.type === 'table' || el.type === 'text'),
+    table: selectedEls.length === 1 && first.type === 'table',
+    header: first?.type === 'table' && first.header,
+    image: selectedEls.some((el) => el.type === 'image'),
+    opacity: first?.opacity,
+    shadow: Boolean(first?.shadow),
+    radius: selectedEls.find((el) => el.type === 'image')?.radius,
+    anim: first?.anim,
+    locked: selectedEls.length > 0 && selectedEls.every((el) => el.locked),
+    grouped: selectedEls.some((el) => el.group),
+  };
+
+  // ---- Elements ----
 
   const addElements = useCallback((els, { edit = false } = {}) => {
     const d = deckRef.current;
@@ -360,8 +486,8 @@ function SlideWorkspace({ sync }) {
     }
     commit(withSlide(d, d.active, (s) => ({ ...s, elements: [...s.elements, ...els] })));
     setSelected(new Set(els.map((e) => e.id)));
-    setEditingId(edit && els.length === 1 ? els[0].id : null);
-  }, [commit, setSelected, toast]);
+    setEditing(edit && els.length === 1 ? els[0].id : null);
+  }, [commit, setEditing, setSelected, toast]);
 
   const updateSelected = useCallback((fn, coalesce) => {
     const ids = selectedRef.current;
@@ -371,13 +497,13 @@ function SlideWorkspace({ sync }) {
   }, [commit]);
 
   const deleteSelection = useCallback(() => {
-    const ids = selectedRef.current;
-    if (!ids.size) return;
     const d = deckRef.current;
+    const ids = new Set([...selectedRef.current].filter((id) => !d.slides[d.active].elements.find((e) => e.id === id)?.locked));
+    if (!ids.size) return;
     commit(withSlide(d, d.active, (s) => ({ ...s, elements: s.elements.filter((el) => !ids.has(el.id)) })));
     setSelected(EMPTY);
-    setEditingId(null);
-  }, [commit, setSelected]);
+    setEditing(null);
+  }, [commit, setEditing, setSelected]);
 
   const copySelection = useCallback((cut = false) => {
     const ids = selectedRef.current;
@@ -397,7 +523,7 @@ function SlideWorkspace({ sync }) {
     const taken = new Set(d.slides[d.active].elements.map((el) => `${el.x},${el.y}`));
     let offset = 0;
     while (clip.current.some((el) => taken.has(`${round(el.x + offset)},${round(el.y + offset)}`)) && offset < 400) offset += 20;
-    addElements(clip.current.map((el) => cloneElement(el, offset, offset)));
+    addElements(cloneElements(clip.current, offset, offset).map(({ locked, ...el }) => el));
   }, [addElements]);
 
   const stopEditing = useCallback(() => {
@@ -413,32 +539,50 @@ function SlideWorkspace({ sync }) {
     }
   }, [commit, setEditing, setSelected]);
 
-  const startEditing = useCallback((el) => {
-    if (readOnly || !hasText(el)) return;
+  const openItem = useCallback((el) => {
+    if (readOnly || el.locked) return;
     setSelected(new Set([el.id]));
-    setEditing(el.id);
+    if (typesIn(el) && el.ph !== 'picture') setEditing(el.id);
+    else if (el.type === 'table') setEditing(el.id);
+    else if (el.type === 'chart') setModal({ type: 'chart', id: el.id });
+    else if (el.type === 'icon') setModal({ type: 'icon', id: el.id });
+    else if (el.ph === 'picture') {
+      pictureFor.current = el.id;
+      fileInput.current?.click();
+    }
   }, [readOnly, setEditing, setSelected]);
 
   const insertImageFile = useCallback(async (file) => {
+    const target = pictureFor.current;
+    pictureFor.current = null;
     try {
       const bmp = await createImageBitmap(file);
       const ratio = bmp.width / bmp.height || 1;
       const { imageId } = await uploadImageFile(file, W);
       const d = deckRef.current;
       const { w: SW, h: SH } = slideSize(d);
-      let w = Math.min(SW * 0.6, bmp.width);
+      const holder = target && d.slides[d.active].elements.find((e) => e.id === target);
+      // Into a picture placeholder: fit inside it. Otherwise: centred, at most 60% of the slide.
+      const area = holder ?? { x: SW * 0.2, y: SH * 0.15, w: SW * 0.6, h: SH * 0.7 };
+      let w = holder ? area.w : Math.min(area.w, bmp.width);
       let h = w / ratio;
-      if (h > SH * 0.7) {
-        h = SH * 0.7;
+      if (h > area.h) {
+        h = area.h;
         w = h * ratio;
       }
-      addElements([{ id: newId('e'), type: 'image', imageId, x: round((SW - w) / 2), y: round((SH - h) / 2), w: round(w), h: round(h), style: {} }]);
+      const image = {
+        id: newId('e'), type: 'image', imageId, x: round(area.x + (area.w - w) / 2), y: round(area.y + (area.h - h) / 2), w: round(w), h: round(h), style: {},
+      };
+      if (holder) {
+        commit(withSlide(d, d.active, (s) => ({ ...s, elements: s.elements.map((e) => (e.id === holder.id ? image : e)) })));
+        setSelected(new Set([image.id]));
+      } else addElements([image]);
     } catch (err) {
       toast.error(errorMessage(err, err.message || 'Could not add that image'));
     }
-  }, [W, addElements, toast]);
+  }, [W, addElements, commit, setSelected, toast]);
 
-  // ---- Pointer: select, move, resize ----
+  // ---- Pointer: select, move, resize, rotate ----
 
   const toSlide = useCallback((e) => {
     const rect = surfaceRef.current.getBoundingClientRect();
@@ -450,7 +594,7 @@ function SlideWorkspace({ sync }) {
     const start = toSlide(e);
     const d = deckRef.current;
     const els = d.slides[d.active].elements;
-    const origin = new Map(els.filter((el) => spec.ids.includes(el.id)).map((el) => [el.id, { x: el.x, y: el.y, w: el.w, h: el.h }]));
+    const origin = new Map(els.filter((el) => spec.ids.includes(el.id)).map((el) => [el.id, el]));
     if (!origin.size) return;
     const { w: SW, h: SH } = slideSize(d);
     const others = els.filter((el) => !origin.has(el.id));
@@ -475,14 +619,19 @@ function SlideWorkspace({ sync }) {
           if (Math.abs(dx) > Math.abs(dy)) dy = 0;
           else dx = 0;
         }
-        if (!ev.altKey) {
-          const snapped = snap(bounds, dx, dy, targets, SNAP_PX / start.scale);
-          ({ dx, dy, guides } = snapped);
-        }
-        for (const [id, o] of origin) boxes[id] = { x: round(o.x + dx), y: round(o.y + dy), w: o.w, h: o.h };
+        if (!ev.altKey) ({ dx, dy, guides } = snap(bounds, dx, dy, targets, SNAP_PX / start.scale));
+        for (const [id, o] of origin) boxes[id] = { x: round(o.x + dx), y: round(o.y + dy) };
+      } else if (spec.kind === 'resize') {
+        const [id, o] = [...origin][0];
+        boxes[id] = resizeBox(o, spec.dir, dx, dy, spec.keepRatio !== ev.shiftKey, o.rotation ?? 0);
       } else {
         const [id, o] = [...origin][0];
-        boxes[id] = resizeBox(o, spec.dir, dx, dy, spec.keepRatio !== ev.shiftKey);
+        const cx = o.x + o.w / 2;
+        const cy = o.y + o.h / 2;
+        let deg = (Math.atan2(p.y - cy, p.x - cx) * 180) / Math.PI + 90;
+        if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
+        else if (Math.abs(((deg % 90) + 90) % 90) < 3 || Math.abs(((deg % 90) + 90) % 90) > 87) deg = Math.round(deg / 90) * 90;
+        boxes[id] = { rotation: round(((deg % 360) + 360) % 360) };
       }
       latest = boxes;
       setPreview({ boxes, guides });
@@ -496,39 +645,48 @@ function SlideWorkspace({ sync }) {
       if (moved && latest) {
         const ids = new Set(Object.keys(latest));
         const cur = deckRef.current;
-        commit(withElements(cur, cur.active, ids, (el) => ({ ...el, ...latest[el.id] })));
+        commit(withElements(cur, cur.active, ids, (el) => {
+          const next = { ...el, ...latest[el.id] };
+          if (next.rotation === 0) delete next.rotation;
+          return next;
+        }));
       }
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
-  }, [toSlide, setPreview, commit]);
+  }, [toSlide, commit]);
 
   const onElementPointerDown = (e, el) => {
     if (readOnly || e.button !== 0 || editingId === el.id) return;
     e.stopPropagation();
     if (editingId) stopEditing();
+    const els = deckRef.current.slides[deckRef.current.active].elements;
     let sel = selectedRef.current;
+    const withGroup = groupIds(els, new Set([el.id]));
     if (e.shiftKey) {
       sel = new Set(sel);
-      if (sel.has(el.id)) sel.delete(el.id);
-      else sel.add(el.id);
+      const adding = !sel.has(el.id);
+      withGroup.forEach((id) => (adding ? sel.add(id) : sel.delete(id)));
       setSelected(sel);
       return;
     }
     if (!sel.has(el.id)) {
-      sel = new Set([el.id]);
+      sel = withGroup;
       setSelected(sel);
     }
     stageRef.current?.focus({ preventScroll: true });
-    startDrag(e, { kind: 'move', ids: [...sel] });
+    const movable = [...sel].filter((id) => !els.find((x) => x.id === id)?.locked);
+    if (movable.length) startDrag(e, { kind: 'move', ids: movable });
   };
 
   const onHandlePointerDown = (e, el, dir) => {
     if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
-    startDrag(e, { kind: 'resize', ids: [el.id], dir, keepRatio: el.type === 'image' });
+    startDrag(e, dir === 'rotate'
+      ? { kind: 'rotate', ids: [el.id] }
+      : { kind: 'resize', ids: [el.id], dir, keepRatio: el.type === 'image' || el.type === 'icon' });
   };
 
   // ---- Actions (menus, toolbar, shortcuts) ----
@@ -543,19 +701,38 @@ function SlideWorkspace({ sync }) {
   };
 
   const setStyle = (key, value) => updateSelected((el) => {
-    if (!hasText(el)) return el;
+    if (!hasStyle(el)) return el;
     const style = { ...el.style };
     if (value === null || value === undefined) delete style[key];
     else style[key] = value;
     return { ...el, style };
   });
 
+  const setProp = (key, value, onlyType) => updateSelected((el) => {
+    if (onlyType && el.type !== onlyType) return el;
+    const next = { ...el };
+    if (value === undefined || value === null) delete next[key];
+    else next[key] = value;
+    return next;
+  });
+
+  const insertCentered = (el, w, h, opts) => {
+    const d = deckRef.current;
+    const { w: SW, h: SH } = slideSize(d);
+    addElements([{ id: newId('e'), x: round((SW - w) / 2), y: round((SH - h) / 2), w, h, style: {}, ...el }], opts);
+  };
+
   const actions = {
     canUndo: history.current.past.length > 0,
     canRedo: history.current.future.length > 0,
     canPaste: Boolean(clip.current?.length),
-    undo, redo,
-    showNotes,
+    undo, redo, view, showNotes, zoom,
+    setView: (v) => {
+      setEditing(null);
+      setView(v);
+    },
+    setZoom,
+    zoomBy: (dir) => setZoom((z) => (dir > 0 ? ZOOMS.find((s) => s > z + 0.01) ?? z : [...ZOOMS].reverse().find((s) => s < z - 0.01) ?? z)),
     toggleNotes: () => setShowNotes(!showNotes),
     newPresentation: () => createAndOpen({}),
     openOffice: () => navigate('/office'),
@@ -569,6 +746,7 @@ function SlideWorkspace({ sync }) {
         toast.error(errorMessage(err));
       }
     },
+    importPptx: () => pptxInput.current?.click(),
     downloadPptx: async () => {
       try {
         const { exportPptx } = await import('./exportPptx');
@@ -606,12 +784,12 @@ function SlideWorkspace({ sync }) {
     paste: pasteElements,
     duplicate: () => {
       const els = copySelection(false);
-      if (els) addElements(els.map((el) => cloneElement(el, 20, 20)));
+      if (els) addElements(cloneElements(els, 20, 20).map(({ locked, ...el }) => el));
     },
     deleteSelection,
     selectAll: () => setSelected(new Set(slide.elements.map((el) => el.id))),
-    present: (i) => setPresent(i),
-    presentHere: () => setPresent(deckRef.current.active),
+    present: (i, presenter = false) => setPresent({ start: i, presenter }),
+    presentHere: () => setPresent({ start: deckRef.current.active, presenter: false }),
     newSlide: (layout) => {
       const d = deckRef.current;
       if (d.slides.length >= LIMITS.slides) {
@@ -622,7 +800,7 @@ function SlideWorkspace({ sync }) {
       slides.splice(d.active + 1, 0, makeSlide(layout, d.size));
       commit({ ...d, slides, active: d.active + 1 });
       setSelected(EMPTY);
-      setEditingId(null);
+      setEditing(null);
     },
     duplicateSlide: () => {
       const d = deckRef.current;
@@ -631,7 +809,7 @@ function SlideWorkspace({ sync }) {
         return;
       }
       const src = d.slides[d.active];
-      const copy = { ...src, id: newId('s'), elements: src.elements.map((el) => cloneElement(el)) };
+      const copy = { ...src, id: newId('s'), elements: cloneElements(src.elements) };
       const slides = d.slides.slice();
       slides.splice(d.active + 1, 0, copy);
       commit({ ...d, slides, active: d.active + 1 });
@@ -643,7 +821,7 @@ function SlideWorkspace({ sync }) {
       const slides = d.slides.filter((_, i) => i !== d.active);
       commit({ ...d, slides, active: Math.min(d.active, slides.length - 1) });
       setSelected(EMPTY);
-      setEditingId(null);
+      setEditing(null);
     },
     moveSlide: (delta) => {
       const d = deckRef.current;
@@ -654,11 +832,29 @@ function SlideWorkspace({ sync }) {
       slides.splice(to, 0, moved);
       commit({ ...d, slides, active: to });
     },
-    backgroundColor: () => setModal({ type: 'background' }),
-    setBackground: (color) => {
+    toggleHidden: () => {
       const d = deckRef.current;
-      commit(withSlide(d, d.active, (s) => ({ ...s, background: color })));
+      commit(withSlide(d, d.active, (s) => {
+        const { hidden, ...rest } = s;
+        return hidden ? rest : { ...rest, hidden: true };
+      }));
     },
+    setTransition: (t) => {
+      const d = deckRef.current;
+      commit(withSlide(d, d.active, (s) => ({ ...s, transition: t })));
+    },
+    transitionToAll: () => {
+      const d = deckRef.current;
+      const t = d.slides[d.active].transition ?? 'none';
+      commit({ ...d, slides: d.slides.map((s) => ({ ...s, transition: t })) });
+      toast.success('Transition applied to every slide');
+    },
+    backgroundColor: () => setModal({ type: 'background' }),
+    resetBackground: () => {
+      const d = deckRef.current;
+      commit(withSlide(d, d.active, (s) => ({ ...s, background: null, background2: null })));
+    },
+    editFooter: () => setModal({ type: 'footer' }),
     setTheme: (id) => commit({ ...deckRef.current, theme: id }),
     setSize: (id) => {
       const d = deckRef.current;
@@ -671,33 +867,66 @@ function SlideWorkspace({ sync }) {
         slides: d.slides.map((s) => ({ ...s, elements: s.elements.map((el) => ({ ...el, x: round(el.x * k), w: round(el.w * k) })) })),
       });
     },
-    insertText: () => {
-      const d = deckRef.current;
-      const { w: SW, h: SH } = slideSize(d);
-      addElements([{ id: newId('e'), type: 'text', x: round(SW / 2 - 150), y: round(SH / 2 - 30), w: 300, h: 60, text: '', style: { size: 18 } }], { edit: true });
-    },
+    insertText: () => insertCentered({ type: 'text', text: '', style: { size: 18 } }, 300, 60, { edit: true }),
     insertShape: (shape) => {
-      const d = deckRef.current;
-      const { w: SW, h: SH } = slideSize(d);
-      const [w, h] = shape === 'line' ? [240, 20] : shape === 'arrow' ? [200, 100] : [200, 120];
-      addElements([{
-        id: newId('e'), type: 'shape', shape, x: round((SW - w) / 2), y: round((SH - h) / 2), w, h,
-        fill: null, stroke: null, strokeWidth: 0, text: '', style: {},
-      }]);
+      const [w, h] = shape === 'line' ? [240, 20] : ['arrow', 'leftRightArrow', 'chevron'].includes(shape) ? [200, 100] : shape === 'downArrow' ? [100, 200] : [200, shape === 'rect' || shape === 'roundRect' || shape === 'callout' ? 120 : 200];
+      insertCentered({ type: 'shape', shape, fill: null, stroke: null, strokeWidth: 0, text: '' }, w, h);
     },
     insertImage: () => fileInput.current?.click(),
+    insertTable: (rows, cols) => insertCentered({ ...makeTable(rows, cols) }, Math.min(W - 80, cols * 140), Math.min(H - 80, rows * 44)),
+    insertChart: (chart) => insertCentered({ ...makeChart(chart) }, 520, 320),
+    insertIcon: () => setModal({ type: 'icon' }),
+    editLink: () => sel.any && setModal({ type: 'link' }),
     toggle: (key) => {
-      const all = textEls.length > 0 && textEls.every((el) => el.style?.[key]);
+      const all = styled.length > 0 && styled.every((el) => el.style?.[key]);
       setStyle(key, all ? null : true);
     },
     setStyle,
+    setProp,
     growText: (dir) => updateSelected((el) => {
-      if (!hasText(el)) return el;
+      if (!hasStyle(el)) return el;
       const size = el.style?.size ?? 18;
       const next = dir > 0 ? SIZE_STEPS.find((s) => s > size) ?? Math.min(200, size + 8) : [...SIZE_STEPS].reverse().find((s) => s < size) ?? Math.max(6, size - 2);
       return { ...el, style: { ...el.style, size: next } };
     }),
-    setShape: (key, value) => updateSelected((el) => (el.type === 'shape' ? { ...el, [key]: value } : el)),
+    // Fill: a shape's fill, an icon's colour, a table's cells, a text box's background (as highlight).
+    setFill: (value) => updateSelected((el) => {
+      if (el.type === 'shape') return { ...el, fill: value };
+      if (el.type === 'icon') return { ...el, color: value === 'none' ? null : value };
+      if (el.type === 'table') return { ...el, fill: value };
+      if (el.type === 'text') {
+        const style = { ...el.style };
+        if (value && value !== 'none') style.highlight = value;
+        else delete style.highlight;
+        return { ...el, style };
+      }
+      return el;
+    }),
+    setOutline: (value, width) => updateSelected((el) => {
+      if (el.type === 'shape') return { ...el, ...(value !== undefined ? { stroke: value } : {}), ...(width ? { strokeWidth: width, stroke: el.stroke === 'none' || value === 'none' ? null : el.stroke } : {}) };
+      if (el.type === 'table' && value !== undefined) return { ...el, border: value };
+      return el;
+    }),
+    rotateBy: (deg) => updateSelected((el) => {
+      const r = ((((el.rotation ?? 0) + deg) % 360) + 360) % 360;
+      const { rotation, ...rest } = el;
+      return r ? { ...rest, rotation: r } : rest;
+    }),
+    flip: (key) => updateSelected((el) => {
+      const { [key]: on, ...rest } = el;
+      return on ? rest : { ...rest, [key]: true };
+    }),
+    setAnimation: (anim) => {
+      const d = deckRef.current;
+      let order = Math.max(0, ...animated(d.slides[d.active]).map((e) => e.animOrder ?? 0));
+      updateSelected((el) => {
+        const { anim: a0, animOrder, ...rest } = el;
+        if (!anim) return rest;
+        order += 1;
+        return { ...rest, anim, animOrder: el.anim ? animOrder : order };
+      });
+    },
+    tableOp: (op) => updateSelected((el) => (el.type === 'table' ? tableEdit(el, op, tableCell.current) : el)),
     arrange: (where) => {
       const ids = selectedRef.current;
       if (!ids.size) return;
@@ -717,6 +946,55 @@ function SlideWorkspace({ sync }) {
         return { ...s, elements: els };
       }));
     },
+    // Several items line up with each other; one lines up with the slide.
+    align: (edge) => {
+      const els = selectedEls.filter((el) => !el.locked);
+      if (!els.length) return;
+      const b = els.length > 1 ? boundsOf(els) : { x: 0, y: 0, w: W, h: H };
+      updateSelected((el) => {
+        if (el.locked) return el;
+        switch (edge) {
+          case 'left': return { ...el, x: round(b.x) };
+          case 'center': return { ...el, x: round(b.x + b.w / 2 - el.w / 2) };
+          case 'right': return { ...el, x: round(b.x + b.w - el.w) };
+          case 'top': return { ...el, y: round(b.y) };
+          case 'middle': return { ...el, y: round(b.y + b.h / 2 - el.h / 2) };
+          default: return { ...el, y: round(b.y + b.h - el.h) };
+        }
+      });
+    },
+    // Equal gaps between items, keeping the first and last where they are.
+    distribute: (axis) => {
+      const els = selectedEls.filter((el) => !el.locked);
+      if (els.length < 3) return;
+      const [pos, len] = axis === 'x' ? ['x', 'w'] : ['y', 'h'];
+      const sorted = [...els].sort((p, q) => p[pos] - q[pos]);
+      const span = sorted[sorted.length - 1][pos] + sorted[sorted.length - 1][len] - sorted[0][pos];
+      const gap = (span - sorted.reduce((t, el) => t + el[len], 0)) / (sorted.length - 1);
+      const at = new Map();
+      let cursor = sorted[0][pos];
+      for (const el of sorted) {
+        at.set(el.id, round(cursor));
+        cursor += el[len] + gap;
+      }
+      updateSelected((el) => (at.has(el.id) ? { ...el, [pos]: at.get(el.id) } : el));
+    },
+    group: () => {
+      if (selectedEls.length < 2) return;
+      const g = newId('g');
+      updateSelected((el) => ({ ...el, group: g }));
+    },
+    ungroup: () => updateSelected((el) => {
+      const { group, ...rest } = el;
+      return rest;
+    }),
+    toggleLock: () => {
+      const lock = !sel.locked;
+      updateSelected((el) => {
+        const { locked, ...rest } = el;
+        return lock ? { ...rest, locked: true } : rest;
+      });
+    },
   };
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
@@ -733,7 +1011,8 @@ function SlideWorkspace({ sync }) {
 
       if (e.key === 'F5') {
         e.preventDefault();
-        a.present(e.shiftKey ? deckRef.current.active : 0);
+        if (e.altKey) a.present(deckRef.current.active, true);
+        else a.present(e.shiftKey ? deckRef.current.active : 0);
         return;
       }
       if (mod && !e.altKey) {
@@ -744,6 +1023,10 @@ function SlideWorkspace({ sync }) {
         } else if (k === 'p') {
           e.preventDefault();
           a.print();
+        } else if (k === '=' || k === '+' || k === '-' || k === '0') {
+          e.preventDefault();
+          if (k === '0') a.setZoom(1);
+          else a.zoomBy(k === '-' ? -1 : 1);
         } else if (readOnly) {
           // Nothing else changes a presentation in the trash.
         } else if (k === 'm') {
@@ -755,6 +1038,9 @@ function SlideWorkspace({ sync }) {
         } else if ((k === ']' || k === '[') && (editingText || !inField)) {
           e.preventDefault();
           a.growText(k === ']' ? 1 : -1);
+        } else if (k === 'k' && selectedRef.current.size) {
+          e.preventDefault();
+          a.editLink();
         } else if (inField) {
           // Undo, select all and the clipboard work natively inside text fields.
         } else if (k === 'z') {
@@ -770,18 +1056,22 @@ function SlideWorkspace({ sync }) {
         } else if (k === 'a') {
           e.preventDefault();
           a.selectAll();
+        } else if (k === 'g') {
+          e.preventDefault();
+          if (e.shiftKey) a.ungroup();
+          else a.group();
         }
         return;
       }
       if (inField) {
-        if (e.key === 'Escape' && editingText) {
+        if (e.key === 'Escape' && editingRef.current) {
           e.preventDefault();
           stopEditing();
           stageRef.current?.focus({ preventScroll: true });
         }
         return;
       }
-      if (e.target.closest?.('.slide-panel, .dropdown-menu, .modal')) return;
+      if (e.target.closest?.('.slide-panel, .slide-sorter, .dropdown-menu, .modal')) return;
 
       const sel = selectedRef.current;
       if (e.key === 'PageDown' || (!sel.size && (e.key === 'ArrowDown' || e.key === 'ArrowRight'))) {
@@ -800,13 +1090,13 @@ function SlideWorkspace({ sync }) {
         const step = e.shiftKey ? 10 : 1;
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-        updateSelected((el) => ({ ...el, x: round(el.x + dx), y: round(el.y + dy) }), 'nudge');
+        updateSelected((el) => (el.locked ? el : { ...el, x: round(el.x + dx), y: round(el.y + dy) }), 'nudge');
       } else if ((e.key === 'Enter' || e.key === 'F2') && sel.size === 1) {
         const d = deckRef.current;
         const el = d.slides[d.active].elements.find((x) => sel.has(x.id));
-        if (el && hasText(el)) {
+        if (el) {
           e.preventDefault();
-          startEditing(el);
+          openItem(el);
         }
       } else if (e.key === 'Escape') {
         setSelected(EMPTY);
@@ -814,7 +1104,7 @@ function SlideWorkspace({ sync }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [present, readOnly, selectSlide, deleteSelection, updateSelected, startEditing, stopEditing, setSelected]);
+  }, [present, readOnly, selectSlide, deleteSelection, updateSelected, openItem, stopEditing, setSelected]);
 
   // Clipboard: copy and cut items, paste items or an image from outside.
   useEffect(() => {
@@ -847,6 +1137,19 @@ function SlideWorkspace({ sync }) {
     };
   }, [copySelection, pasteElements, insertImageFile, readOnly]);
 
+  // Ctrl + wheel zooms the slide.
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return undefined;
+    const onWheel = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      actionsRef.current.zoomBy(e.deltaY < 0 ? 1 : -1);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [view]);
+
   // ---- Rendering ----
 
   const restore = async () => {
@@ -859,25 +1162,46 @@ function SlideWorkspace({ sync }) {
     }
   };
 
+  const importFile = async (file) => {
+    try {
+      const { importPptx } = await import('./importPptx');
+      const result = await importPptx(file);
+      const { document } = await officeApi.create({ kind: 'slides', title: result.title, content: result.content, folderId: doc.folderId });
+      result.warnings.forEach((w) => toast.error(w));
+      toast.success(`Opened "${document.title}"`);
+      navigate(`/office/slides/${document.id}`);
+    } catch (err) {
+      toast.error(errorMessage(err, err.message || 'Could not open that file'));
+    }
+  };
+
   const onTextChange = (el, value) => {
     const d = deckRef.current;
     commit(withElements(d, d.active, new Set([el.id]), (x) => ({ ...x, text: value.slice(0, LIMITS.text) })), `text:${el.id}`);
   };
 
-  const renderElement = (el, th) => {
-    const box = preview?.boxes[el.id] ?? el;
-    const shown = box === el ? el : { ...el, ...box };
+  const onCellChange = (el, r, c, value) => {
+    const d = deckRef.current;
+    commit(withElements(d, d.active, new Set([el.id]), (x) => ({ ...x, cells: x.cells.map((row, i) => (i === r ? row.map((v, j) => (j === c ? value.slice(0, LIMITS.cell) : v)) : row)) })), `cell:${el.id}`);
+  };
+
+  const shownBox = (el) => (preview?.boxes[el.id] ? { ...el, ...preview.boxes[el.id] } : el);
+
+  const renderElement = (el, th, surface) => {
+    const shown = shownBox(el);
     const isSelected = selected.has(el.id);
     const editing = editingId === el.id;
     return (
       <div
         key={el.id}
-        className={`slide-el${readOnly ? '' : ' editable'}${isSelected ? ' selected' : ''}${editing ? ' editing' : ''}`}
-        style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+        className={`slide-el${readOnly ? '' : ' editable'}${isSelected ? ' selected' : ''}${editing ? ' editing' : ''}${el.locked ? ' locked' : ''}`}
+        style={boxStyle(shown)}
         onPointerDown={(e) => onElementPointerDown(e, el)}
-        onDoubleClick={() => startEditing(el)}
+        onDoubleClick={() => openItem(el)}
       >
-        {editing ? (
+        {editing && el.type === 'table' ? (
+          <TableEditor el={el} theme={th} onChange={(r, c, v) => onCellChange(el, r, c, v)} onCell={(cell) => { tableCell.current = cell; }} />
+        ) : editing ? (
           <>
             {el.type === 'shape' && <SlideElement el={{ ...shown, text: '' }} theme={th} />}
             <textarea
@@ -894,15 +1218,52 @@ function SlideWorkspace({ sync }) {
               onPointerDown={(e) => e.stopPropagation()}
             />
           </>
-        ) : <SlideElement el={shown} theme={th} placeholders={!readOnly} />}
+        ) : <SlideElement el={shown} theme={th} placeholders={!readOnly} surface={surface} />}
+        {el.anim && !readOnly && <span className="slide-anim-badge" style={{ transform: `scale(${1 / scale})` }}>{animated(slide).findIndex((x) => x.id === el.id) + 1}</span>}
       </div>
     );
   };
 
-  const single = selectedEls.length === 1 && !editingId ? selectedEls[0] : null;
-  const singleBox = single ? preview?.boxes[single.id] ?? single : null;
+  // Selection outlines and handles, turned with their item.
+  const single = selectedEls.length === 1 && editingId !== selectedEls[0].id ? selectedEls[0] : null;
   const handleSize = 9 / scale;
+  const overlay = (el) => {
+    const b = shownBox(el);
+    const showHandles = single && single.id === el.id && !readOnly && !el.locked;
+    return (
+      <div key={`o-${el.id}`} className="slide-overlay" style={{ left: b.x, top: b.y, width: b.w, height: b.h, transform: b.rotation ? `rotate(${b.rotation}deg)` : undefined }}>
+        <div className="slide-outline" style={{ borderWidth: 1.5 / scale }} />
+        {el.locked && <FontAwesomeIcon icon={faLock} className="slide-lock-badge" style={{ fontSize: 12 / scale }} />}
+        {showHandles && HANDLES.map((dir) => (
+          <div key={dir} className={`slide-handle h-${dir}`} onPointerDown={(e) => onHandlePointerDown(e, el, dir)}
+            style={{
+              left: (dir.includes('w') ? 0 : dir.includes('e') ? b.w : b.w / 2) - handleSize / 2,
+              top: (dir.includes('n') ? 0 : dir.includes('s') ? b.h : b.h / 2) - handleSize / 2,
+              width: handleSize,
+              height: handleSize,
+              borderWidth: 1.5 / scale,
+            }} />
+        ))}
+        {showHandles && (
+          <>
+            <div className="slide-rotate-stem" style={{ left: b.w / 2, top: -22 / scale, height: 22 / scale, width: 1.5 / scale }} />
+            <div className="slide-rotate" title="Rotate (Shift snaps to 15°)" onPointerDown={(e) => onHandlePointerDown(e, el, 'rotate')}
+              style={{ left: b.w / 2 - handleSize * 0.65, top: -22 / scale - handleSize * 1.3, width: handleSize * 1.3, height: handleSize * 1.3, borderWidth: 1.5 / scale }} />
+          </>
+        )}
+      </div>
+    );
+  };
+
   const folderPath = folderTree && doc.folderId && folderTree.byId.has(doc.folderId) ? folderTree.pathNames(doc.folderId).join(' / ') : null;
+  const modalEl = modal?.id ? slide.elements.find((e) => e.id === modal.id) : null;
+  const onMoveSlide = (from, to) => {
+    const d = deckRef.current;
+    const slides = d.slides.slice();
+    const [moved] = slides.splice(from, 1);
+    slides.splice(to, 0, moved);
+    commit({ ...d, slides, active: to });
+  };
 
   return (
     <div className="doc-app slide-app">
@@ -926,14 +1287,10 @@ function SlideWorkspace({ sync }) {
                 </button>
               )}
             </div>
-            {!readOnly && (
-              <SlideMenuBar a={actions} deck={deck} style={activeStyle} hasSelection={selectedEls.length > 0} hasText={textEls.length > 0} />
-            )}
+            {!readOnly && <SlideMenuBar a={actions} deck={deck} sel={sel} />}
           </div>
         </div>
-        {!readOnly && (
-          <SlideToolbar a={actions} style={activeStyle} hasText={textEls.length > 0} hasShape={shapeEls.length > 0} themeFont={theme.font} />
-        )}
+        {!readOnly && view === 'normal' && <SlideToolbar a={actions} sel={sel} themeFont={theme.font} />}
         {sync.status === 'conflict' && (
           <div className="alert alert-warning d-flex flex-wrap align-items-center gap-2 m-2 py-2" role="alert">
             <FontAwesomeIcon icon={faCircleExclamation} />
@@ -950,84 +1307,88 @@ function SlideWorkspace({ sync }) {
         )}
       </div>
 
-      <div className="slide-main">
-        <SlidePanel look={look} deck={deck} readOnly={readOnly} onSelect={selectSlide} a={actions}
-          onMove={(from, to) => {
-            const d = deckRef.current;
-            const slides = d.slides.slice();
-            const [moved] = slides.splice(from, 1);
-            slides.splice(to, 0, moved);
-            commit({ ...d, slides, active: to });
-          }} />
+      {view === 'sorter' ? (
+        <div className="slide-main">
+          <Thumbnails className="slide-sorter" look={look} deck={deck} readOnly={readOnly} width={220} a={actions}
+            onSelect={selectSlide} onMove={onMoveSlide}
+            onOpen={(i) => { selectSlide(i); setView('normal'); }} />
+        </div>
+      ) : (
+        <div className="slide-main">
+          <Thumbnails className="slide-panel" look={look} deck={deck} readOnly={readOnly} width={168} a={actions}
+            onSelect={selectSlide} onMove={onMoveSlide} />
 
-        <div className="slide-work">
-          <div
-            ref={stageRef}
-            className="slide-stage"
-            tabIndex={-1}
-            onPointerDown={(e) => {
-              if (e.button !== 0) return;
-              if (editingId) stopEditing();
-              setSelected(EMPTY);
-            }}
-            onDragOver={(e) => {
-              if (!readOnly && [...e.dataTransfer.items].some((i) => i.kind === 'file')) e.preventDefault();
-            }}
-            onDrop={(e) => {
-              const file = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'));
-              if (readOnly || !file) return;
-              e.preventDefault();
-              insertImageFile(file);
-            }}
-          >
-            {stage.w > 0 && (
-              <div className="slide-canvas" ref={surfaceRef} style={{ width, height: H * scale }}>
-                <SlideView deck={look} slide={slide} width={width} renderElement={renderElement} className="slide-canvas-frame">
-                  {selectedEls.filter((el) => !editingId || el.id !== editingId).map((el) => {
-                    const b = preview?.boxes[el.id] ?? el;
-                    return <div key={`o-${el.id}`} className="slide-outline" style={{ left: b.x, top: b.y, width: b.w, height: b.h, borderWidth: 1.5 / scale }} />;
-                  })}
-                  {single && !readOnly && HANDLES.map((dir) => {
-                    const x = dir.includes('w') ? singleBox.x : dir.includes('e') ? singleBox.x + singleBox.w : singleBox.x + singleBox.w / 2;
-                    const y = dir.includes('n') ? singleBox.y : dir.includes('s') ? singleBox.y + singleBox.h : singleBox.y + singleBox.h / 2;
-                    return (
-                      <div key={dir} className={`slide-handle h-${dir}`} onPointerDown={(e) => onHandlePointerDown(e, single, dir)}
-                        style={{ left: x - handleSize / 2, top: y - handleSize / 2, width: handleSize, height: handleSize, borderWidth: 1.5 / scale }} />
-                    );
-                  })}
-                  {preview?.guides?.x.map((x) => <div key={`gx${x}`} className="slide-guide v" style={{ left: x, width: 1 / scale }} />)}
-                  {preview?.guides?.y.map((y) => <div key={`gy${y}`} className="slide-guide h" style={{ top: y, height: 1 / scale }} />)}
-                </SlideView>
+          <div className="slide-work">
+            <div
+              ref={stageRef}
+              className={`slide-stage${zoom > 1 ? ' zoomed' : ''}`}
+              tabIndex={-1}
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                if (editingId) stopEditing();
+                setSelected(EMPTY);
+              }}
+              onDragOver={(e) => {
+                if (!readOnly && [...e.dataTransfer.items].some((i) => i.kind === 'file')) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                const file = [...e.dataTransfer.files].find((f) => f.type.startsWith('image/'));
+                if (readOnly || !file) return;
+                e.preventDefault();
+                insertImageFile(file);
+              }}
+            >
+              {stage.w > 0 && (
+                <div className="slide-canvas" ref={surfaceRef} style={{ width, height: H * scale }}>
+                  <SlideView deck={look} slide={slide} index={si} width={width} renderElement={renderElement} className="slide-canvas-frame">
+                    {selectedEls.filter((el) => el.id !== editingId || el.type === 'table').map(overlay)}
+                    {preview?.guides?.x.map((x) => <div key={`gx${x}`} className="slide-guide v" style={{ left: x, width: 1 / scale }} />)}
+                    {preview?.guides?.y.map((y) => <div key={`gy${y}`} className="slide-guide h" style={{ top: y, height: 1 / scale }} />)}
+                  </SlideView>
+                </div>
+              )}
+            </div>
+            {showNotes && (
+              <div className="slide-notes">
+                <textarea
+                  value={slide.notes}
+                  readOnly={readOnly}
+                  maxLength={LIMITS.notes}
+                  placeholder="Click to add speaker notes"
+                  aria-label="Speaker notes"
+                  onChange={(e) => {
+                    const d = deckRef.current;
+                    commit(withSlide(d, d.active, (s) => ({ ...s, notes: e.target.value })), `notes:${slide.id}`);
+                  }}
+                />
               </div>
             )}
           </div>
-          {showNotes && (
-            <div className="slide-notes">
-              <textarea
-                value={slide.notes}
-                readOnly={readOnly}
-                maxLength={LIMITS.notes}
-                placeholder="Click to add speaker notes"
-                aria-label="Speaker notes"
-                onChange={(e) => {
-                  const d = deckRef.current;
-                  commit(withSlide(d, d.active, (s) => ({ ...s, notes: e.target.value })), `notes:${slide.id}`);
-                }}
-              />
-            </div>
-          )}
         </div>
-      </div>
+      )}
 
       <div className="doc-statusbar">
-        <span className="text-truncate">Slide {si + 1} of {deck.slides.length}</span>
+        <span className="text-truncate">Slide {si + 1} of {deck.slides.length}{slide.hidden ? ' (hidden)' : ''}</span>
         <span className="d-none d-sm-inline text-muted">{theme.label}</span>
         <span className="ms-auto d-flex align-items-center gap-2">
+          <button type="button" className={`doc-zoom-btn${view === 'normal' ? ' active' : ''}`} onClick={() => actions.setView('normal')} title="Normal view" aria-pressed={view === 'normal'}>
+            <FontAwesomeIcon icon={faSquare} />
+          </button>
+          <button type="button" className={`doc-zoom-btn${view === 'sorter' ? ' active' : ''}`} onClick={() => actions.setView('sorter')} title="Slide sorter" aria-pressed={view === 'sorter'}>
+            <FontAwesomeIcon icon={faTableCells} />
+          </button>
           <button type="button" className={`doc-zoom-btn slide-notes-btn${showNotes ? ' active' : ''}`} onClick={() => setShowNotes(!showNotes)}
             aria-pressed={showNotes} title="Speaker notes">
             <FontAwesomeIcon icon={faNoteSticky} className="me-1" />Notes
           </button>
-          <button type="button" className="doc-zoom-btn" onClick={() => setPresent(si)} title="Present from this slide (Shift+F5)">
+          {view === 'normal' && (
+            <>
+              <button type="button" className="doc-zoom-btn" onClick={() => actions.zoomBy(-1)} aria-label="Zoom out"><FontAwesomeIcon icon={faMinus} /></button>
+              <button type="button" className="doc-zoom-btn" style={{ minWidth: 44 }} onClick={() => setZoom(1)} title="Fit to window">{zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`}</button>
+              <button type="button" className="doc-zoom-btn" onClick={() => actions.zoomBy(1)} aria-label="Zoom in"><FontAwesomeIcon icon={faPlus} /></button>
+            </>
+          )}
+          <button type="button" className="doc-zoom-btn" onClick={() => setPresent({ start: si, presenter: false })} title="Present from this slide (Shift+F5)">
             <FontAwesomeIcon icon={faPlay} className="me-1" />Present
           </button>
         </span>
@@ -1038,13 +1399,51 @@ function SlideWorkspace({ sync }) {
           const file = e.target.files?.[0];
           e.target.value = '';
           if (file) insertImageFile(file);
+          else pictureFor.current = null;
+        }} />
+      <input ref={pptxInput} type="file" className="d-none" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) importFile(file);
         }} />
 
-      {present !== null && <Present deck={deck} start={present} onClose={() => setPresent(null)} />}
+      {present && (
+        <Present deck={deck} start={present.start} presenter={present.presenter} onClose={() => setPresent(null)}
+          onPopupBlocked={() => toast.error('Allow pop-ups for this site to use presenter view.')} />
+      )}
       {modal?.type === 'background' && (
-        <Modal title="Slide background" onClose={() => setModal(null)}>
-          <ColorGrid close={() => setModal(null)} resetLabel="Theme background" onPick={(c) => actions.setBackground(c)} />
-        </Modal>
+        <BackgroundModal slide={slide} onClose={() => setModal(null)}
+          onSave={(bg) => {
+            const d = deckRef.current;
+            commit(withSlide(d, d.active, (s) => ({ ...s, ...bg })));
+          }}
+          onApplyAll={(bg) => {
+            const d = deckRef.current;
+            commit({ ...d, slides: d.slides.map((s) => ({ ...s, ...bg })) });
+          }} />
+      )}
+      {modal?.type === 'footer' && (
+        <FooterModal footer={deck.footer} onClose={() => setModal(null)} onSave={(footer) => commit({ ...deckRef.current, footer })} />
+      )}
+      {modal?.type === 'link' && (
+        <LinkModal current={first?.link} onClose={() => setModal(null)} onSave={(url) => actions.setProp('link', url ?? undefined)} />
+      )}
+      {modal?.type === 'icon' && (
+        <IconPicker onClose={() => setModal(null)}
+          onPick={(icon) => {
+            if (modalEl) {
+              const d = deckRef.current;
+              commit(withElements(d, d.active, new Set([modalEl.id]), (el) => ({ ...el, icon })));
+            } else insertCentered({ type: 'icon', icon, color: null }, 96, 96);
+          }} />
+      )}
+      {modal?.type === 'chart' && modalEl && (
+        <ChartDataModal el={modalEl} theme={theme} onClose={() => setModal(null)}
+          onSave={(chart) => {
+            const d = deckRef.current;
+            commit(withElements(d, d.active, new Set([modalEl.id]), (el) => ({ ...el, ...chart })));
+          }} />
       )}
       {modal?.type === 'move' && folderTree && (
         <MoveToFolderModal
