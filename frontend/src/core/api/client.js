@@ -21,7 +21,8 @@ const api = axios.create({
   // The double-submit CSRF token, required by /auth/refresh and /auth/logout.
   xsrfCookieName: 'csrf',
   xsrfHeaderName: 'X-CSRF-Token',
-  withXSRFToken: (config) => config.url?.startsWith('/auth/'),
+  // Axios passes the full path here ("/api/auth/refresh"), so match the /auth/ segment.
+  withXSRFToken: (config) => /(^|\/)auth\//.test(config.url || ''),
 });
 
 function tokenExpiryMs(token) {
@@ -54,7 +55,7 @@ export function refreshSession() {
     refreshPromise = (async () => {
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          const { data } = await api.post('/auth/refresh', null, { _skipAuthRetry: true });
+          const { data } = await api.post('/auth/refresh', undefined, { _skipAuthRetry: true });
           setSession(data.accessToken, data.user);
           return data;
         } catch (err) {

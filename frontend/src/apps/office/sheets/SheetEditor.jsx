@@ -184,8 +184,14 @@ function SheetWorkspace({ sync }) {
     syncRef.current.markDirty();
   }, [setSel]);
 
+  // Back to the grid after a menu, dialog or edit — unless another field
+  // (the name box, a dialog) has taken the focus in the meantime.
   const focusGrid = useCallback(() => {
-    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+    requestAnimationFrame(() => {
+      const el = document.activeElement;
+      const elsewhere = el && el !== document.body && el !== inputRef.current && (el.matches('input, textarea, select, [contenteditable]') || el.closest('.modal'));
+      if (!elsewhere) inputRef.current?.focus({ preventScroll: true });
+    });
   }, []);
 
   // ---- Editing a cell ----
@@ -1027,7 +1033,8 @@ function SheetWorkspace({ sync }) {
           onGoto={(target) => {
             if (!commitEdit()) return;
             setSel(target);
-            focusGrid();
+            // Straight away, so typing right after Enter lands in the cell.
+            inputRef.current?.focus({ preventScroll: true });
           }}
           sheet={sheet}
           onFocusEdit={() => {

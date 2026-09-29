@@ -443,6 +443,7 @@ export default function Grid({
         left: colX[active.c],
         top: rowY[active.r],
         minWidth: colX[active.c + 1] - colX[active.c],
+        width: editing ? undefined : colX[active.c + 1] - colX[active.c],
         height: editing ? undefined : rowY[active.r + 1] - rowY[active.r],
         minHeight: rowY[active.r + 1] - rowY[active.r],
         fontFamily: editStyle?.fontFamily ?? DEFAULT_FONT_STACK,
