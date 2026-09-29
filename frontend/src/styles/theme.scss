@@ -104,6 +104,19 @@ body { -webkit-font-smoothing: antialiased; }
     radial-gradient(circle at 15% 20%, rgba($green, 0.22), transparent 40%),
     linear-gradient(160deg, $navy 0%, $navy-900 100%);
 }
+.auth-column {
+  width: 100%;
+  max-width: 420px;
+}
+.auth-back {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
+  text-decoration: none;
+  &:hover { color: $green; }
+}
 .auth-card {
   width: 100%;
   max-width: 420px;
