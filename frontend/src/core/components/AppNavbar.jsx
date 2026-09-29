@@ -8,6 +8,7 @@ import { useApps } from '../context/AppsContext';
 import useDropdown from '../hooks/useDropdown';
 import Avatar from './Avatar';
 import Logo, { APP_NAME } from './Logo';
+import { UPCOMING_APPS } from '../../apps';
 
 const menuStyle = { right: 0, left: 'auto' };
 
@@ -55,6 +56,15 @@ export default function AppNavbar() {
                   <Link className="dropdown-item" to={`/${app.id}`} onClick={() => switcher.setOpen(false)}>
                     <FontAwesomeIcon icon={app.icon} className="me-2" fixedWidth />{app.name}
                   </Link>
+                </li>
+              ))}
+              <li><hr className="dropdown-divider" /></li>
+              {UPCOMING_APPS.map((app) => (
+                <li key={app.id}>
+                  <span className="dropdown-item-text d-flex align-items-center text-muted" aria-disabled="true">
+                    <FontAwesomeIcon icon={app.icon} className="me-2" fixedWidth />{app.name}
+                    <span className="badge rounded-pill text-bg-light ms-auto ps-2">Coming soon</span>
+                  </span>
                 </li>
               ))}
             </ul>

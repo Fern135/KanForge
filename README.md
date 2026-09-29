@@ -151,7 +151,7 @@ On the first run, the launcher also does this automatically:
 
 ### 3. Open it
 
-Go to **https://localhost:8443** and create an account.
+Go to **https://localhost:8443/app/register** and create an account. The public landing page is at **https://localhost:8443**.
 
 > The local certificate is self-signed, so your browser shows a warning the first time.
 > Click **Advanced → Proceed to localhost**. This is expected locally. For a real server, see [Deploying to a server](#deploying-to-a-server).
@@ -180,8 +180,8 @@ Running `prod` or `dev` switches modes directly, so you don't need `down` in bet
 
 ### Dev mode
 
-`dev` runs the Vite dev server with hot reload at **http://localhost:5173**. The API also restarts on save.
-- Edits in `frontend/src/` and `backend/src/` show up immediately. There's nothing to rebuild.
+`dev` runs the Vite dev server with hot reload at **http://localhost:5173** (the app is at **/app/**). The API also restarts on save.
+- Edits in `frontend/src/`, `frontend/site/` and `backend/src/` show up immediately. There's nothing to rebuild.
 - Dev mode uses the same database as production mode, so your boards appear in both.
 - If you change `package.json` in either app, run `dev` again to rebuild the image.
 
@@ -265,7 +265,7 @@ If another proxy or load balancer sits in front of nginx, adjust `TRUST_PROXY` i
 │   ├── migrations/           migrate-mongo migrations
 │   ├── scripts/seed.js       Demo data
 │   └── test/                 Integration and security tests
-└── frontend/                 React app
+└── frontend/                 React app (served at /app/) and static site in site/ (served at /)
     ├── src/
     │   ├── core/             Sign-in, account, admin, home, navbar, shared components (folder tree)
     │   ├── apps/             One folder per app, listed in apps/index.js, each at /<app>
@@ -351,7 +351,7 @@ Found a vulnerability? Please report it privately to the maintainer instead of o
 
 **Adding an app**
 1. Backend: create `backend/src/apps/<id>/index.js` exporting `id`, `name`, `description`, `defaultEnabled`, `bodyLimits` (optional, for request bodies over 32 KB) and `createRouter({ limiters })`, and add it to `apps/index.js`. Its routes are served at `/api/<id>` behind sign-in and the on/off switch. Larger body limits also need a matching `client_max_body_size` in `frontend/nginx/default.conf.template`.
-2. Frontend: create `frontend/src/apps/<id>/routes.jsx` and add an entry (`id`, `name`, `icon`, lazy `Routes`) to `apps/index.js`. It's served at `/<id>/*`.
+2. Frontend: create `frontend/src/apps/<id>/routes.jsx` and add an entry (`id`, `name`, `icon`, lazy `Routes`) to `apps/index.js`. It's served at `/app/<id>/*`.
 3. Only import from `core`. Anything two apps need goes in `core`.
 
 ## License

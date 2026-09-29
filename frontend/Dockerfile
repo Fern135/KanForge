@@ -20,6 +20,7 @@ FROM nginxinc/nginx-unprivileged:1.29-alpine AS runtime
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY nginx/security-headers.conf nginx/proxy.conf /etc/nginx/snippets/
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=build /app/site /usr/share/nginx/html
+COPY --from=build /app/dist /usr/share/nginx/html/app
 EXPOSE 8080 8443
 HEALTHCHECK --interval=15s --timeout=3s CMD wget -qO- --no-check-certificate https://127.0.0.1:8443/ >/dev/null || exit 1

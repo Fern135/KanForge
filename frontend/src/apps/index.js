@@ -1,5 +1,7 @@
 import { lazy } from 'react';
-import { faTableColumns, faNoteSticky, faFileWord } from '@fortawesome/free-solid-svg-icons';
+import {
+  faTableColumns, faNoteSticky, faFileWord, faFolder, faEnvelope,
+} from '@fortawesome/free-solid-svg-icons';
 
 // Every app the frontend knows. Each one lives at /<id>/*, loads only when
 // opened, and may import from core but never from another app. The server
@@ -23,4 +25,11 @@ export const APPS = [
     icon: faFileWord,
     Routes: lazy(() => import('./office/routes')),
   },
+];
+
+// Apps that are announced but not built yet. They show as "Coming soon" on the
+// home screen and in the app switcher, and don't link anywhere.
+export const UPCOMING_APPS = [
+  { id: 'files', name: 'Files', icon: faFolder },
+  { id: 'mail', name: 'Mail', icon: faEnvelope },
 ];

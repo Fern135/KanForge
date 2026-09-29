@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b2545" />
+    <title>Privacy Policy · Kanforge</title>
+    <meta name="description" content="How Kanforge handles your data, for both the hosted service and self-hosted installs." />
+    <link rel="canonical" href="https://www.kanforge.com/privacy" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Kanforge" />
+    <meta property="og:title" content="Privacy Policy · Kanforge" />
+    <meta property="og:description" content="How Kanforge handles your data, for both the hosted service and self-hosted installs." />
+    <meta property="og:url" content="https://www.kanforge.com/privacy" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/site.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="brand" href="/"><img src="/favicon.svg" alt="" width="32" height="32" /> Kanforge</a>
+      <nav class="nav-links">
+        <a href="/pricing">Pricing</a>
+        <a href="/app/login">Log in</a>
+        <a class="btn" href="/app/register">Sign up</a>
+      </nav>
+    </header>
+
+    <main>
+      <article class="prose">
+        <h1>Privacy Policy</h1>
+        <p class="updated">Last updated: September 29, 2026</p>
+
+        <div class="summary">
+          <p><strong>The short version:</strong> we collect only what we need to run your account, we don't sell your data, and we don't use ads, analytics or trackers. If you self-host Kanforge, your data stays on your server and we never see it.</p>
+        </div>
+
+        <h2>1. Who this policy covers</h2>
+        <p>Kanforge can be used in two ways, and this policy covers both:</p>
+        <ul>
+          <li><strong>The hosted service</strong> at kanforge.com, which we run for you on a paid plan. For the hosted service, <span class="todo">[Company legal name]</span> ("Kanforge", "we", "us") is the data controller.</li>
+          <li><strong>Self-hosted installs</strong>, where you or your organization run the open-source Kanforge software on your own machine or server. We are not the controller for self-hosted installs and have no access to them. See <a href="#self-hosted">section 9</a>.</li>
+        </ul>
+        <p>This policy also covers this website (kanforge.com), including the pricing and legal pages.</p>
+
+        <h2>2. What we collect on the hosted service</h2>
+        <h3>Account information</h3>
+        <ul>
+          <li>Your name and email address.</li>
+          <li>Your password, stored only as an Argon2id hash. We can't see or recover your password.</li>
+          <li>An optional security PIN, also stored only as a hash, and a record of the devices where you've turned PIN sign-in on.</li>
+          <li>Your role (member or admin) and your workspace's app settings.</li>
+        </ul>
+        <h3>Your content</h3>
+        <p>Everything you create or upload: boards, lists, cards, labels, checklists, comments, notes, folders, documents, spreadsheets and images. It also includes the email addresses of people you invite to a board.</p>
+        <h3>Sign-in and security records</h3>
+        <ul>
+          <li>For each signed-in session: the date, when it expires, and your device's IP address and browser user agent. You can end all your sessions with "sign out everywhere" under Account &amp; security.</li>
+          <li>Server logs that record each request's IP address, the page or API address requested, the response status, timing and browser user agent. Passwords, tokens and other credentials are removed from logs.</li>
+          <li>Short-lived counters of failed sign-in attempts and request rates, used to block abuse and brute-force attacks.</li>
+        </ul>
+        <h3>Billing information</h3>
+        <p>When you pay for a plan, payments are handled by our payment provider, <span class="todo">[Payment provider]</span>. We receive your plan, seat count, billing status and the name and email for your invoices. We never see or store your full card number.</p>
+
+        <h2>3. Cookies</h2>
+        <p>We use only the cookies needed to keep you signed in and to protect your account. We don't use advertising, analytics or tracking cookies, so we don't show a cookie banner.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Cookie</th><th>Purpose</th><th>Lifetime</th></tr></thead>
+            <tbody>
+              <tr><td><code>rt</code></td><td>Keeps you signed in (a rotating refresh token). Not readable by page scripts.</td><td>14 days after your last activity</td></tr>
+              <tr><td><code>csrf</code></td><td>Protects your session against cross-site request forgery.</td><td>Same as <code>rt</code></td></tr>
+              <tr><td><code>pd</code></td><td>Remembers a device where you turned on PIN sign-in. Only set if you use a PIN. Not readable by page scripts.</td><td>90 days</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>This website (the landing, pricing and legal pages) sets no cookies.</p>
+
+        <h2>4. How we use your data</h2>
+        <ul>
+          <li>To provide the service: store your content, show it to you and the people you share it with, and keep you signed in.</li>
+          <li>To keep the service secure: detect and block abuse, investigate problems, and protect accounts.</li>
+          <li>To bill you for your plan.</li>
+          <li>To contact you about your account, security, billing and important changes to the service. We won't send marketing email unless you opt in.</li>
+        </ul>
+        <p>We don't sell your data, use it for advertising, or use your content to train AI models. We only look at your content when you ask us to (for example, for support), when it's needed to fix a problem or keep the service secure, or when the law requires it.</p>
+        <p>If you're in the EEA or UK, our legal bases are: performing our contract with you (running the service and billing), our legitimate interests (security and abuse prevention), your consent (optional marketing), and legal obligations (tax and accounting records).</p>
+
+        <h2>5. Who we share data with</h2>
+        <p>We share data only with service providers who help us run Kanforge, under contracts that require them to protect it:</p>
+        <ul>
+          <li>Hosting and infrastructure: <span class="todo">[Hosting provider, region]</span></li>
+          <li>Payments: <span class="todo">[Payment provider]</span></li>
+          <li>Transactional email, once we send email: <span class="todo">[Email provider]</span></li>
+        </ul>
+        <p>Content you share with others, such as a board you invite someone to, is visible to those people. We may also disclose data if the law requires it, to protect people's safety, or as part of a merger or sale of the business, in which case this policy continues to apply.</p>
+
+        <h2>6. How long we keep data</h2>
+        <ul>
+          <li><strong>Your account and content:</strong> for as long as your account exists. Items in a trash are deleted for good after 30 days, and images no longer used in any document are removed after a day.</li>
+          <li><strong>After you delete your account or cancel:</strong> we delete your content within 30 days, and it leaves our backups within <span class="todo">[backup retention, e.g. 35 days]</span>.</li>
+          <li><strong>Sign-in and security records:</strong> until the session expires or is ended, and server logs for up to <span class="todo">[log retention, e.g. 30 days]</span>.</li>
+          <li><strong>Billing records:</strong> as long as tax and accounting law requires.</li>
+        </ul>
+
+        <h2>7. Security</h2>
+        <p>We protect your data with HTTPS everywhere, Argon2id password hashing, rotating refresh tokens, CSRF protection, rate limiting, a strict Content Security Policy, and isolated, non-root containers. The database isn't reachable from the internet. No system is perfectly secure, but if a breach affects your data, we'll tell you without undue delay.</p>
+
+        <h2>8. Your rights</h2>
+        <p>Wherever you live, you can ask us to:</p>
+        <ul>
+          <li>give you a copy of your data,</li>
+          <li>correct it,</li>
+          <li>delete it,</li>
+          <li>limit or object to how we use it, and</li>
+          <li>send it to you in a portable format.</li>
+        </ul>
+        <p>You can do much of this yourself: edit your profile under Account &amp; security, export notes as Markdown, and download documents as Word or Excel files. For anything else, email <span class="todo">[privacy@kanforge.com]</span>. We'll reply within 30 days. If you're in the EEA or UK, you can also complain to your data protection authority. California residents have the same rights under the CCPA, and we don't sell or share personal information as the CCPA defines those terms.</p>
+
+        <h2 id="self-hosted">9. Self-hosted installs</h2>
+        <p>When you run Kanforge on your own machine or server:</p>
+        <ul>
+          <li><strong>We don't receive any of your data.</strong> The software has no analytics, telemetry or update checks, and it makes no requests to us or any other outside service. Everything it needs is served from your own server.</li>
+          <li><strong>The operator is responsible for it.</strong> Whoever runs the install (you, your employer, or someone else) decides what data it holds, who can see it, and how long it's kept. That operator is the data controller, and questions about your data on that install should go to them.</li>
+          <li><strong>What the software stores</strong> is the same as in sections 2 and 3: account details, content, session records (IP address and user agent), the same cookies, and whatever logs the operator's server keeps.</li>
+        </ul>
+        <p>If you run Kanforge for other people, you may need your own privacy policy. You're welcome to adapt this one.</p>
+        <p>This policy still applies when you visit kanforge.com or our GitHub repository. GitHub's own privacy policy covers your use of GitHub.</p>
+
+        <h2>10. Children</h2>
+        <p>Kanforge isn't meant for children under 16, and we don't knowingly collect their data. If you think a child has given us personal data, contact us and we'll delete it.</p>
+
+        <h2>11. International transfers</h2>
+        <p>The hosted service stores data in <span class="todo">[region]</span>. If we transfer personal data out of the EEA or UK, we use safeguards such as the European Commission's Standard Contractual Clauses.</p>
+
+        <h2>12. Changes to this policy</h2>
+        <p>If we make material changes, we'll post the new version here and tell hosted-service users by email or in the app at least 14 days before it takes effect.</p>
+
+        <h2>13. Contact</h2>
+        <p><span class="todo">[Company legal name]</span><br /><span class="todo">[Postal address]</span><br />Email: <span class="todo">[privacy@kanforge.com]</span></p>
+      </article>
+    </main>
+
+    <footer>
+      <nav>
+        <a href="/pricing">Pricing</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="https://github.com/Fern135/KanForge">GitHub</a>
+      </nav>
+      <p>&copy; 2026 Kanforge &middot; Open source under AGPL-3.0</p>
+    </footer>
+  </body>
+</html>

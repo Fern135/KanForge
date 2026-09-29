@@ -30,6 +30,8 @@ server {
 
   root /usr/share/nginx/html;
   limit_conn conn 50;
+  # Relative Location headers, so redirects keep whatever host and port the browser used.
+  absolute_redirect off;
 
   include /etc/nginx/snippets/security-headers.conf;
 
@@ -67,19 +69,37 @@ server {
     include /etc/nginx/snippets/proxy.conf;
   }
 
+  # The React app lives under /app/ and the static site at /. Keep the paths in
+  # sync with vite.config.js.
+  location = /app { return 301 /app/$is_args$args; }
+
+  # Old app URLs (from before the /app/ move) keep working.
+  location ~ ^/(?:login|register|account|admin|boards|notes|office|b)(?:/|$) {
+    return 301 /app$request_uri;
+  }
+
   # Hashed build assets are immutable, so they can be cached for a year.
-  location /assets/ {
+  location /app/assets/ {
     include /etc/nginx/snippets/security-headers.conf;
     add_header Cache-Control "public, max-age=31536000, immutable" always;
     try_files $uri =404;
   }
 
   # SPA fallback. index.html is never cached, so deploys take effect immediately.
+  location /app/ {
+    include /etc/nginx/snippets/security-headers.conf;
+    add_header Cache-Control "no-cache" always;
+    try_files $uri /app/index.html;
+  }
+
+  # Static site: /pricing serves pricing.html or pricing/index.html.
   location / {
     include /etc/nginx/snippets/security-headers.conf;
     add_header Cache-Control "no-cache" always;
-    try_files $uri /index.html;
+    try_files $uri $uri.html $uri/index.html =404;
   }
+
+  error_page 404 /404.html;
 
   # Never serve dotfiles.
   location ~ /\. { deny all; return 404; }
