@@ -19,7 +19,7 @@
 - Admins can turn each app on or off for everyone. A turned-off app is hidden and its data is kept
 
 **Boards**
-- Create, rename and delete boards (up to 100 per user)
+- Create, rename and delete boards. Each person can be on up to 100 boards, counting ones shared with them. The boards page warns at 80, and invites are refused once someone is at 100
 - Six board backgrounds. Mobile-first navy, light green and gray theme
 - Share a board by inviting people by email. The owner manages members and can delete the board; members can leave
 - Per-board labels: add, rename, recolor (8 colors) and delete

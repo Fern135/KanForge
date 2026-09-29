@@ -136,6 +136,7 @@ body { -webkit-font-smoothing: antialiased; }
     align-items: center;
     justify-content: center;
     &:hover { color: $navy; border-color: $green-600; }
+    &:disabled { opacity: 0.6; cursor: not-allowed; transform: none; color: $gray-text; border-color: #c6ced8; }
   }
 }
 

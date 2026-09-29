@@ -15,7 +15,9 @@ const s = require('../serialize');
 const listsRouter = require('./lists');
 const cardsRouter = require('./cards');
 
+// Counts every board a person is on, whether they own it or it was shared with them.
 const MAX_BOARDS_PER_USER = 100;
+const boardCount = (userId) => Board.countDocuments({ 'members.user': userId });
 const { LABEL_COLORS, BOARD_BACKGROUNDS } = Board;
 const DEFAULT_LABELS = ['green', 'yellow', 'orange', 'red', 'purple', 'blue'].map((color) => ({ name: '', color }));
 
@@ -57,17 +59,27 @@ module.exports = function boardsRouter(limiters) {
   const router = express.Router();
 
   router.get('/', async (req, res) => {
-    const boards = await Board.find({ 'members.user': req.user.id })
-      .select('title background members updatedAt')
-      .sort({ updatedAt: -1 })
-      .limit(MAX_BOARDS_PER_USER)
-      .lean();
-    res.json({ boards: boards.map((b) => s.boardSummary(b, req.user.id)) });
+    const [boards, used] = await Promise.all([
+      Board.find({ 'members.user': req.user.id })
+        .select('title background members updatedAt')
+        .sort({ updatedAt: -1 })
+        .limit(MAX_BOARDS_PER_USER)
+        .lean(),
+      boardCount(req.user.id),
+    ]);
+    res.json({
+      boards: boards.map((b) => s.boardSummary(b, req.user.id)),
+      limit: { used, max: MAX_BOARDS_PER_USER },
+    });
   });
 
   router.post('/', body(createSchema), async (req, res) => {
-    const count = await Board.countDocuments({ 'members.user': req.user.id });
-    if (count >= MAX_BOARDS_PER_USER) throw AppError.badRequest('Board limit reached', 'LIMIT');
+    if (await boardCount(req.user.id) >= MAX_BOARDS_PER_USER) {
+      throw AppError.badRequest(
+        `You're on ${MAX_BOARDS_PER_USER} boards, the most you can have. Delete or leave a board to create a new one.`,
+        'LIMIT',
+      );
+    }
     const board = await Board.create({
       title: req.body.title,
       background: req.body.background || 'navy',
@@ -114,6 +126,13 @@ module.exports = function boardsRouter(limiters) {
     if (!user) throw AppError.notFound('No account exists with that email', 'USER_NOT_FOUND');
     if (req.board.members.some((m) => String(m.user) === String(user._id))) {
       throw AppError.conflict('That user is already a member', 'ALREADY_MEMBER');
+    }
+    // Without this, invites could push someone past the limit and hide their oldest boards.
+    if (await boardCount(user._id) >= MAX_BOARDS_PER_USER) {
+      throw AppError.conflict(
+        `That person is already on ${MAX_BOARDS_PER_USER} boards, the most anyone can have. They need to leave one first.`,
+        'MEMBER_BOARD_LIMIT',
+      );
     }
     const updated = await Board.updateOne(
       { _id: req.board._id, 'members.user': trusted({ $ne: user._id }), 'members.99': trusted({ $exists: false }) },
