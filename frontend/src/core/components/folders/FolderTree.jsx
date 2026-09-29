@@ -4,17 +4,18 @@ import {
   faChevronRight, faChevronDown, faFolder, faFolderOpen, faInbox, faLayerGroup, faEllipsis,
   faFolderPlus, faPen, faArrowRightToBracket, faTrashCan,
 } from '@fortawesome/free-solid-svg-icons';
-import useDropdown from '../../../core/hooks/useDropdown';
-import { MAX_FOLDER_DEPTH } from '../utils/folders';
+import useDropdown from '../../hooks/useDropdown';
+import { MAX_FOLDER_DEPTH } from './tree';
 
-// Drag-and-drop payload types, so a drop knows whether a note or a folder landed.
-export const DRAG_NOTE = 'application/x-kanforge-note';
+// Drag-and-drop payload types, so a drop knows whether an item (note,
+// document, ...) or a folder landed.
+export const DRAG_ITEM = 'application/x-kanforge-item';
 export const DRAG_FOLDER = 'application/x-kanforge-folder';
 
 // A drop target: highlights while something is dragged over it.
 function useDropZone(onDrop) {
   const [over, setOver] = useState(false);
-  const accepts = (e) => e.dataTransfer.types.includes(DRAG_NOTE) || e.dataTransfer.types.includes(DRAG_FOLDER);
+  const accepts = (e) => e.dataTransfer.types.includes(DRAG_ITEM) || e.dataTransfer.types.includes(DRAG_FOLDER);
   return {
     over,
     props: {
@@ -29,9 +30,9 @@ function useDropZone(onDrop) {
         setOver(false);
         if (!accepts(e)) return;
         e.preventDefault();
-        const noteId = e.dataTransfer.getData(DRAG_NOTE);
+        const itemId = e.dataTransfer.getData(DRAG_ITEM);
         const folderId = e.dataTransfer.getData(DRAG_FOLDER);
-        onDrop(noteId ? { noteId } : { folderId });
+        onDrop(itemId ? { itemId } : { folderId });
       },
     },
   };
@@ -80,7 +81,7 @@ function FolderRow({ folder, tree, depth, ctx }) {
   const active = ctx.selected === folder.id;
   const drop = useDropZone((item) => ctx.onDropOnFolder(item, folder.id));
   const canNest = tree.depth(folder.id) < MAX_FOLDER_DEPTH;
-  const count = tree.noteTotal(folder.id);
+  const count = tree.itemTotal(folder.id);
 
   if (ctx.editing?.mode === 'rename' && ctx.editing.id === folder.id) {
     return <NameInput initial={folder.name} depth={depth} onSubmit={(name) => ctx.onSubmitEdit(name)} onCancel={ctx.onCancelEdit} />;
@@ -145,12 +146,12 @@ function FolderRow({ folder, tree, depth, ctx }) {
   );
 }
 
-// The sidebar's folder list. "All notes" and "Unfiled" sit above the folders;
-// dropping on "Unfiled" takes a note out of its folder, or moves a folder to the top level.
-export default function FolderTree({ tree, unfiledCount, allCount, ...ctx }) {
+// A sidebar folder list. "All" and "Unfiled" sit above the folders; dropping
+// on "Unfiled" takes an item out of its folder, or moves a folder to the top level.
+export default function FolderTree({ tree, unfiledCount, allCount, allLabel = 'All', ...ctx }) {
   return (
     <nav className="folder-tree" aria-label="Folders">
-      <SpecialRow icon={faLayerGroup} label="All notes" active={ctx.selected === 'all'} count={allCount}
+      <SpecialRow icon={faLayerGroup} label={allLabel} active={ctx.selected === 'all'} count={allCount}
         onClick={() => ctx.onSelect('all')} onDrop={(item) => ctx.onDropOnFolder(item, null)} />
       <SpecialRow icon={faInbox} label="Unfiled" active={ctx.selected === 'unfiled'} count={unfiledCount}
         onClick={() => ctx.onSelect('unfiled')} onDrop={(item) => ctx.onDropOnFolder(item, null)} />

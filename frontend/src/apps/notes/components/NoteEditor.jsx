@@ -8,10 +8,10 @@ import {
 import { notesApi } from '../api';
 import { noteExtensions } from '../extensions';
 import { toMarkdown, fileNames } from '../utils/markdown';
-import { downloadBlob } from '../utils/download';
+import { downloadBlob } from '../../../core/utils/download';
 import EditorToolbar from './EditorToolbar';
 import TagInput from './TagInput';
-import MoveToFolderModal from './MoveToFolderModal';
+import MoveToFolderModal from '../../../core/components/folders/MoveToFolderModal';
 import ConfirmModal from '../../../core/components/ConfirmModal';
 import Spinner from '../../../core/components/Spinner';
 import { errorMessage } from '../../../core/api/client';

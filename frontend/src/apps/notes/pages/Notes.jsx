@@ -8,12 +8,12 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { notesApi } from '../api';
 import { toMarkdown, fileNames } from '../utils/markdown';
-import { downloadBlob } from '../utils/download';
-import { buildTree, MAX_FOLDER_DEPTH } from '../utils/folders';
+import { downloadBlob } from '../../../core/utils/download';
+import { buildTree, MAX_FOLDER_DEPTH } from '../../../core/components/folders/tree';
 import NoteEditor from '../components/NoteEditor';
 import ImportNotesModal from '../components/ImportNotesModal';
-import MoveToFolderModal from '../components/MoveToFolderModal';
-import FolderTree, { DRAG_NOTE } from '../components/FolderTree';
+import MoveToFolderModal from '../../../core/components/folders/MoveToFolderModal';
+import FolderTree, { DRAG_ITEM } from '../../../core/components/folders/FolderTree';
 import ConfirmModal from '../../../core/components/ConfirmModal';
 import Spinner from '../../../core/components/Spinner';
 import useDropdown from '../../../core/hooks/useDropdown';
@@ -234,15 +234,15 @@ export default function Notes() {
   };
 
   const onDropOnFolder = (item, folderId) => {
-    if (item.noteId) moveNote(item.noteId, folderId);
+    if (item.itemId) moveNote(item.itemId, folderId);
     else if (item.folderId) moveFolder(item.folderId, folderId).catch(() => {});
   };
 
   const deleteFolder = async (id) => {
     try {
       const data = await notesApi.removeFolder(id);
-      toast.success(data.trashedNotes
-        ? `Folder deleted. ${plural(data.trashedNotes, 'note')} moved to the trash.`
+      toast.success(data.trashedItems
+        ? `Folder deleted. ${plural(data.trashedItems, 'note')} moved to the trash.`
         : 'Folder deleted');
       if (folderSelected && tree.subtree(id).includes(selected)) setSelected('all');
       if (noteId) navigate('/notes', { replace: true });
@@ -366,6 +366,7 @@ export default function Notes() {
             </div>
             <FolderTree
               tree={tree}
+              allLabel="All notes"
               allCount={folderData.totalCount}
               unfiledCount={folderData.unfiledCount}
               selected={selected}
@@ -416,7 +417,7 @@ export default function Notes() {
                   className={`note-item ${n.id === noteId ? 'active' : ''}`}
                   draggable={!n.trashedAt}
                   onDragStart={(e) => {
-                    e.dataTransfer.setData(DRAG_NOTE, n.id);
+                    e.dataTransfer.setData(DRAG_ITEM, n.id);
                     e.dataTransfer.effectAllowed = 'move';
                   }}
                 >
@@ -492,7 +493,7 @@ export default function Notes() {
           title={`Delete "${deletingFolder.name}"?`}
           message={(() => {
             const subfolders = tree.subtree(deletingFolder.id).length - 1;
-            const count = tree.noteTotal(deletingFolder.id);
+            const count = tree.itemTotal(deletingFolder.id);
             const parts = [];
             if (subfolders) parts.push(`its ${plural(subfolders, 'subfolder')} will be deleted too`);
             if (count) parts.push(`${plural(count, 'note')} will move to the trash, where you can restore them for 30 days`);

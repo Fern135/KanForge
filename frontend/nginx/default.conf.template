@@ -60,6 +60,13 @@ server {
     include /etc/nginx/snippets/proxy.conf;
   }
 
+  # Office documents can reach 3 MB, and image uploads 8 MB (a 5 MB image, base64-encoded).
+  location /api/office {
+    limit_req zone=api burst=60 nodelay;
+    client_max_body_size 8m;
+    include /etc/nginx/snippets/proxy.conf;
+  }
+
   # Hashed build assets are immutable, so they can be cached for a year.
   location /assets/ {
     include /etc/nginx/snippets/security-headers.conf;

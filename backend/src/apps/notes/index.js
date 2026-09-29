@@ -11,7 +11,7 @@ module.exports = {
   defaultEnabled: true,
 
   // Relative to /api/notes. A note's content can be larger than the default 32 KB body.
-  largeBodyPaths: [''],
+  bodyLimits: [{ path: '', limit: '256kb' }],
 
   // Mounted at /api/notes, behind requireAuth and the app on/off check.
   createRouter({ limiters }) {

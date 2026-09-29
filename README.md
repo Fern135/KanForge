@@ -326,4 +326,6 @@ Found a vulnerability? Please report it privately to the maintainer instead of o
 
 ## License
 
-[MIT](LICENSE). The logo uses the Font Awesome Free hammer icon ([CC BY 4.0](https://fontawesome.com/license/free)).
+[GNU AGPL-3.0](LICENSE). You can use, change and self-host Kanforge freely. If you run a modified version as a service for others, you must share your changes under the same license. Versions released before this change stay available under MIT.
+
+The logo uses the Font Awesome Free hammer icon ([CC BY 4.0](https://fontawesome.com/license/free)).

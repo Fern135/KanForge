@@ -6,7 +6,7 @@ import { errorMessage } from '../../../core/api/client';
 import { useToast } from '../../../core/context/ToastContext';
 import { notesApi } from '../api';
 import { fromMarkdown } from '../utils/markdown';
-import { MAX_FOLDER_DEPTH } from '../utils/folders';
+import { MAX_FOLDER_DEPTH } from '../../../core/components/folders/tree';
 
 // The server takes at most 100 notes and 256 KB per request, so larger
 // imports are sent in batches.

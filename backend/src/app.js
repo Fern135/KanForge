@@ -74,9 +74,12 @@ function createApp() {
     }
     next();
   });
-  // Some app routes (bulk imports) carry many items, so they get a larger (still bounded) limit.
-  const largeBodyPaths = manifests.flatMap((m) => (m.largeBodyPaths || []).map((p) => `/api/${m.id}${p}`));
-  if (largeBodyPaths.length) app.use(largeBodyPaths, express.json({ limit: '256kb', strict: true }));
+  // Some app routes (bulk imports, documents, images) need a larger, still bounded,
+  // body limit. The first parser to match wins, so longer paths go first.
+  const bodyLimits = manifests
+    .flatMap((m) => (m.bodyLimits || []).map(({ path, limit }) => ({ path: `/api/${m.id}${path}`, limit })))
+    .sort((a, b) => b.path.length - a.path.length);
+  for (const { path, limit } of bodyLimits) app.use(path, express.json({ limit, strict: true }));
   app.use(express.json({ limit: '32kb', strict: true }));
   app.use(cookieParser());
   app.use(originCheck);

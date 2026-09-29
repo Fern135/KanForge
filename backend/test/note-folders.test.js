@@ -74,7 +74,7 @@ describe('note folders', () => {
     await as(u).patch(`/api/notes/${loose.id}`).send({ folderId: null }).expect(200);
     assert.deepEqual(await listIds(u, 'folder=unfiled'), ['loose']);
 
-    const counts = Object.fromEntries((await as(u).get('/api/notes/folders')).body.folders.map((f) => [f.name, f.noteCount]));
+    const counts = Object.fromEntries((await as(u).get('/api/notes/folders')).body.folders.map((f) => [f.name, f.itemCount]));
     assert.deepEqual(counts, { Sub: 1, Top: 1 });
   });
 
@@ -131,7 +131,7 @@ describe('note folders', () => {
 
     const res = await as(u).del(`/api/notes/folders/${top.id}`).expect(200);
     assert.equal(res.body.deletedFolders, 2);
-    assert.equal(res.body.trashedNotes, 2);
+    assert.equal(res.body.trashedItems, 2);
     assert.deepEqual(res.body.folders.map((f) => f.name), ['Keep']);
     assert.deepEqual(await listIds(u, 'view=trash'), ['one', 'two']);
     assert.deepEqual(await listIds(u, ''), ['safe']);

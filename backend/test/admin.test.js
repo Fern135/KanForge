@@ -34,14 +34,14 @@ describe('admin and apps', () => {
 
   it('turns an app off for everyone, and back on', async () => {
     const listed = await api().get('/api/apps').set(auth(member.token)).expect(200);
-    assert.deepEqual(listed.body.apps.map((a) => a.id), ['boards', 'notes']);
+    assert.deepEqual(listed.body.apps.map((a) => a.id), ['boards', 'notes', 'office']);
 
     const off = await api().patch('/api/admin/apps/boards').set(auth(admin.token)).send({ enabled: false }).expect(200);
     assert.equal(off.body.apps.find((a) => a.id === 'boards').enabled, false);
     const blocked = await api().get('/api/boards').set(auth(member.token));
     assert.equal(blocked.status, 404);
     assert.equal(blocked.body.error.code, 'APP_DISABLED');
-    assert.deepEqual((await api().get('/api/apps').set(auth(member.token))).body.apps.map((a) => a.id), ['notes']);
+    assert.deepEqual((await api().get('/api/apps').set(auth(member.token))).body.apps.map((a) => a.id), ['notes', 'office']);
 
     await api().patch('/api/admin/apps/boards').set(auth(admin.token)).send({ enabled: true }).expect(200);
     await api().get('/api/boards').set(auth(member.token)).expect(200);

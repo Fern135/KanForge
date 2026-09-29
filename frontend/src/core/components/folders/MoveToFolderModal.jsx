@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFolder, faInbox } from '@fortawesome/free-solid-svg-icons';
-import Modal from '../../../core/components/Modal';
-import { MAX_FOLDER_DEPTH } from '../utils/folders';
+import Modal from '../Modal';
+import { MAX_FOLDER_DEPTH } from './tree';
 
-// Picks where a note or folder goes. For a folder, its own subtree and any spot
+// Picks where an item or folder goes. For a folder, its own subtree and any spot
 // that would nest it too deeply are unavailable.
 export default function MoveToFolderModal({ tree, title, currentId, movingFolderId, onMove, onClose }) {
   const [busy, setBusy] = useState(false);

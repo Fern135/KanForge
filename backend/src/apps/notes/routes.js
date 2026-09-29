@@ -5,9 +5,10 @@ const { trusted, Types } = require('mongoose');
 const Note = require('./models/Note');
 const NoteFolder = require('./models/NoteFolder');
 const { sanitizeDoc, EMPTY_DOC } = require('./content');
-const {
-  foldersRouter, findFolder, subtreeIds, namePaths, listFolders, ensurePath, folderName, MAX_DEPTH,
-} = require('./folders');
+const folders = require('./folders');
+const { namePaths, folderName, MAX_DEPTH } = require('../../core/services/folderTree');
+
+const { findFolder, subtreeIds, listFolders, ensurePath } = folders;
 const { body, ids, objectId, z } = require('../../core/middleware/validate');
 const AppError = require('../../core/utils/AppError');
 
@@ -100,7 +101,7 @@ async function resolveFolder(req, id) {
 module.exports = function notesRouter(limiters) {
   const router = express.Router();
 
-  router.use('/folders', foldersRouter());
+  router.use('/folders', folders.router());
 
   router.get('/', async (req, res) => {
     const { view, q, tag: byTag, folder, deep } = listQuery.parse(req.query);

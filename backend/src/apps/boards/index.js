@@ -20,7 +20,10 @@ module.exports = {
   defaultEnabled: true,
 
   // Relative to /api/boards. Bulk imports carry many items, so they get a larger body limit.
-  largeBodyPaths: ['/:boardId/cards/bulk', '/:boardId/cards/:cardId/checklist/bulk'],
+  bodyLimits: [
+    { path: '/:boardId/cards/bulk', limit: '256kb' },
+    { path: '/:boardId/cards/:cardId/checklist/bulk', limit: '256kb' },
+  ],
 
   // Mounted at /api/boards, behind requireAuth and the app on/off check.
   createRouter({ limiters }) {

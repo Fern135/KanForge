@@ -1,4 +1,4 @@
-// Helpers over the flat folder list the server sends ({ id, name, parentId, noteCount }).
+// Helpers over the flat folder list the server sends ({ id, name, parentId, itemCount }).
 
 export const MAX_FOLDER_DEPTH = 10;
 
@@ -32,7 +32,7 @@ export function buildTree(folders) {
 
   const depth = (id) => pathNames(id).length;
   const height = (id) => 1 + Math.max(0, ...kids(id).map((c) => height(c.id)));
-  const noteTotal = (id) => subtree(id).reduce((n, fid) => n + (byId.get(fid)?.noteCount || 0), 0);
+  const itemTotal = (id) => subtree(id).reduce((n, fid) => n + (byId.get(fid)?.itemCount || 0), 0);
 
-  return { byId, kids, subtree, pathNames, depth, height, noteTotal };
+  return { byId, kids, subtree, pathNames, depth, height, itemTotal };
 }
