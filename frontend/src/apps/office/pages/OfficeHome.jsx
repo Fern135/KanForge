@@ -3,9 +3,11 @@ import { Link, useNavigate } from 'react-router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faPlus, faMagnifyingGlass, faFileWord, faFileExcel, faFilePowerpoint, faFileImport, faEllipsisVertical, faFolder,
-  faFolderPlus, faPen, faCopy, faArrowRightToBracket, faTrashCan, faRotateLeft, faFolderOpen,
+  faFolderPlus, faPen, faCopy, faArrowRightToBracket, faTrashCan, faRotateLeft, faFolderOpen, faDownload, faXmark,
 } from '@fortawesome/free-solid-svg-icons';
 import { officeApi } from '../api';
+import { canExport } from '../exportFile';
+import { downloadBlob } from '../../../core/utils/download';
 import FolderTree, { DRAG_ITEM } from '../../../core/components/folders/FolderTree';
 import MoveToFolderModal from '../../../core/components/folders/MoveToFolderModal';
 import { buildTree, MAX_FOLDER_DEPTH } from '../../../core/components/folders/tree';
@@ -19,9 +21,9 @@ import { timeAgo } from '../../../core/utils/dates';
 import '../office.scss';
 
 const KIND = {
-  doc: { icon: faFileWord, color: '#2b579a', label: 'Document', path: 'docs' },
-  sheet: { icon: faFileExcel, color: '#217346', label: 'Spreadsheet', path: 'sheets' },
-  slides: { icon: faFilePowerpoint, color: '#b7472a', label: 'Presentation', path: 'slides' },
+  doc: { icon: faFileWord, color: '#2b579a', label: 'Document', path: 'docs', untitled: 'Untitled document', ready: true },
+  sheet: { icon: faFileExcel, color: '#217346', label: 'Spreadsheet', path: 'sheets', untitled: 'Untitled spreadsheet', ready: true },
+  slides: { icon: faFilePowerpoint, color: '#b7472a', label: 'Presentation', path: 'slides', untitled: 'Untitled presentation' },
 };
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -104,6 +106,10 @@ export default function OfficeHome() {
   const [editing, setEditing] = useState(null);
   const [modal, setModal] = useState(null);
   const [importing, setImporting] = useState(false);
+  // Documents ticked in the list, and what a bulk action is doing ("Downloading 2 of 5…").
+  const [picked, setPicked] = useState(() => new Set());
+  const [busy, setBusy] = useState(null);
+  const lastPicked = useRef(null);
   const q = useDebounced(query.trim(), 250);
 
   const tree = useMemo(() => buildTree(folderData.folders), [folderData.folders]);
@@ -139,6 +145,20 @@ export default function OfficeHome() {
   useEffect(() => {
     loadDocs();
   }, [loadDocs]);
+
+  // A new list starts with nothing ticked; after a reload, keep only what's still there.
+  useEffect(() => {
+    setPicked(new Set());
+    lastPicked.current = null;
+  }, [view, q, selected, deep]);
+  useEffect(() => {
+    if (!docs) return;
+    setPicked((p) => {
+      const ids = new Set(docs.map((d) => d.id));
+      const next = new Set([...p].filter((id) => ids.has(id)));
+      return next.size === p.size ? p : next;
+    });
+  }, [docs]);
   useEffect(() => {
     loadFolders();
   }, [loadFolders]);
@@ -167,13 +187,22 @@ export default function OfficeHome() {
     if (!file) return;
     setImporting(true);
     try {
+      const folderId = folderSelected ? selected : null;
+      const { importSpreadsheet, SPREADSHEET_FILE } = await import('../sheets/importSheet');
+      if (SPREADSHEET_FILE.test(file.name)) {
+        const result = await importSpreadsheet(file);
+        const { document } = await officeApi.create({ kind: 'sheet', title: result.title, content: result.content, folderId });
+        result.warnings.forEach((w) => toast.error(w));
+        navigate(`/office/sheets/${document.id}`);
+        return;
+      }
       const { importDocx } = await import('../docs/importDocx');
       const result = await importDocx(file);
-      const { document } = await officeApi.create({ kind: 'doc', title: result.title, content: result.content, folderId: folderSelected ? selected : null });
+      const { document } = await officeApi.create({ kind: 'doc', title: result.title, content: result.content, folderId });
       if (result.warnings) toast.error(result.warnings);
       navigate(`/office/docs/${document.id}`);
     } catch (err) {
-      toast.error(errorMessage(err, 'Could not open that Word document'));
+      toast.error(errorMessage(err, err.message || 'Could not open that file'));
       setImporting(false);
     }
   };
@@ -255,6 +284,85 @@ export default function OfficeHome() {
   const deleteDoc = act((d) => officeApi.remove(d.id), 'Deleted forever');
   const emptyTrash = act(() => officeApi.emptyTrash(), 'Trash emptied');
 
+  const downloadDoc = async (d) => {
+    try {
+      const { exportDocument } = await import('../exportFile');
+      const { blob, name } = await exportDocument(d.id);
+      downloadBlob(blob, name);
+    } catch (err) {
+      toast.error(errorMessage(err, err.message || 'Could not download the document'));
+    }
+  };
+
+  // ---------- Ticked documents ----------
+
+  const pickedDocs = docs ? docs.filter((d) => picked.has(d.id)) : [];
+  const allPicked = Boolean(docs?.length) && pickedDocs.length === docs.length;
+
+  // Shift-click ticks (or unticks) everything between the last click and this one.
+  const pick = (index, shift) => {
+    const id = docs[index].id;
+    const on = !picked.has(id);
+    setPicked((p) => {
+      const next = new Set(p);
+      const from = shift && lastPicked.current !== null ? Math.min(lastPicked.current, index) : index;
+      const to = shift && lastPicked.current !== null ? Math.max(lastPicked.current, index) : index;
+      for (let i = from; i <= to && i < docs.length; i += 1) {
+        if (on) next.add(docs[i].id);
+        else next.delete(docs[i].id);
+      }
+      return next;
+    });
+    lastPicked.current = index;
+  };
+  const pickAll = () => setPicked(allPicked ? new Set() : new Set(docs.map((d) => d.id)));
+
+  // Runs `fn` on each ticked document, one at a time, then reports how it went.
+  const bulk = async (verb, fn, done) => {
+    const list = pickedDocs;
+    let ok = 0;
+    let failed = 0;
+    for (const [i, d] of list.entries()) {
+      setBusy(`${verb} ${i + 1} of ${list.length}…`);
+      try {
+        await fn(d);
+        ok += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setBusy(null);
+    if (ok) toast.success(done(ok));
+    if (failed) toast.error(`${plural(failed, 'document')} couldn't be changed. Try again in a moment.`);
+    setPicked(new Set());
+    refresh();
+  };
+
+  const downloadPicked = async () => {
+    const list = pickedDocs.filter((d) => canExport(d.kind));
+    if (!list.length) {
+      toast.error('These documents can\'t be downloaded yet.');
+      return;
+    }
+    if (list.length === 1) {
+      setBusy('Preparing download…');
+      await downloadDoc(list[0]);
+      setBusy(null);
+      return;
+    }
+    try {
+      const { exportZip } = await import('../exportFile');
+      const { blob, failed } = await exportZip(list.map((d) => d.id), (n, total) => setBusy(`Preparing ${n} of ${total}…`));
+      const zipName = view === 'trash' || selected === 'all' || selected === 'unfiled' ? 'Kanforge documents' : tree.byId.get(selected)?.name || 'Kanforge documents';
+      downloadBlob(blob, `${zipName.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Kanforge documents'}.zip`);
+      if (failed) toast.error(`${plural(failed, 'document')} couldn't be added to the .zip.`);
+    } catch (err) {
+      toast.error(errorMessage(err, err.message || 'Could not prepare the download'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const location = view === 'trash'
     ? 'Trash'
     : selected === 'all' ? 'All documents' : selected === 'unfiled' ? 'Unfiled' : tree.pathNames(selected).join(' / ');
@@ -275,9 +383,9 @@ export default function OfficeHome() {
                 <ul className="dropdown-menu dropdown-menu-end show shadow border-0" style={{ right: 0, left: 'auto' }} role="menu">
                   {Object.entries(KIND).map(([kind, k]) => (
                     <li key={kind}>
-                      <button type="button" className="dropdown-item d-flex align-items-center" disabled={kind !== 'doc'} onClick={() => create(kind)}>
+                      <button type="button" className="dropdown-item d-flex align-items-center" disabled={!k.ready} onClick={() => create(kind)}>
                         <FontAwesomeIcon icon={k.icon} className="me-2" style={{ color: k.color }} fixedWidth />{k.label}
-                        {kind !== 'doc' && <span className="badge text-bg-light ms-auto ps-2">Coming soon</span>}
+                        {!k.ready && <span className="badge text-bg-light ms-auto ps-2">Coming soon</span>}
                       </button>
                     </li>
                   ))}
@@ -345,11 +453,49 @@ export default function OfficeHome() {
             docs?.length > 0 && <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => setModal({ type: 'emptyTrash' })}>Empty trash</button>
           ) : (
             <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => docxInput.current?.click()} disabled={importing}>
-              <FontAwesomeIcon icon={faFileImport} className="me-1" />{importing ? 'Importing…' : 'Import Word file'}
+              <FontAwesomeIcon icon={faFileImport} className="me-1" />{importing ? 'Importing…' : 'Import file'}
             </button>
           )}
         </div>
         {view === 'trash' && <div className="form-text px-3 mt-0 mb-2">Documents in the trash are deleted after 30 days.</div>}
+
+        {pickedDocs.length > 0 && (
+          <div className="office-selection" role="toolbar" aria-label="Selected documents">
+            <button type="button" className="icon-btn" onClick={() => setPicked(new Set())} aria-label="Clear selection" title="Clear selection" disabled={Boolean(busy)}>
+              <FontAwesomeIcon icon={faXmark} />
+            </button>
+            <span className="fw-semibold me-auto" aria-live="polite">{busy || `${pickedDocs.length} selected`}</span>
+            {view === 'trash' ? (
+              <>
+                <button type="button" className="btn btn-sm btn-light" disabled={Boolean(busy)}
+                  onClick={() => bulk('Restoring', (d) => officeApi.restore(d.id), (n) => `${plural(n, 'document')} restored`)}>
+                  <FontAwesomeIcon icon={faRotateLeft} className="me-1" />Restore
+                </button>
+                <button type="button" className="btn btn-sm btn-outline-danger" disabled={Boolean(busy)} onClick={() => setModal({ type: 'deletePicked' })}>
+                  <FontAwesomeIcon icon={faTrashCan} className="me-1" />Delete forever
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="btn btn-sm btn-light" disabled={Boolean(busy)} onClick={downloadPicked}
+                  title={pickedDocs.length > 1 ? 'Download as a .zip of Word and Excel files' : 'Download as a Word or Excel file'}>
+                  <FontAwesomeIcon icon={faDownload} className="me-1" />Download
+                </button>
+                <button type="button" className="btn btn-sm btn-light" disabled={Boolean(busy)} onClick={() => setModal({ type: 'movePicked' })}>
+                  <FontAwesomeIcon icon={faArrowRightToBracket} className="me-1" /><span className="d-none d-sm-inline">Move to…</span><span className="d-sm-none">Move</span>
+                </button>
+                <button type="button" className="btn btn-sm btn-light d-none d-sm-inline-block" disabled={Boolean(busy)}
+                  onClick={() => bulk('Copying', (d) => officeApi.copy(d.id), (n) => (n === 1 ? 'Copy created' : `${n} copies created`))}>
+                  <FontAwesomeIcon icon={faCopy} className="me-1" />Make copies
+                </button>
+                <button type="button" className="btn btn-sm btn-outline-danger" disabled={Boolean(busy)}
+                  onClick={() => bulk('Moving', (d) => officeApi.trash(d.id), (n) => `${plural(n, 'document')} moved to the trash`)}>
+                  <FontAwesomeIcon icon={faTrashCan} className="me-1" /><span className="d-none d-sm-inline">Move to trash</span><span className="d-sm-none">Trash</span>
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {!docs ? (
           <div className="p-5 text-center"><Spinner /></div>
@@ -368,13 +514,18 @@ export default function OfficeHome() {
         ) : (
           <div className="office-list" role="table" aria-label="Documents">
             <div className="office-row office-head" role="row">
-              <span role="columnheader">Name</span>
+              <span role="columnheader" className="d-flex align-items-center gap-2">
+                <input type="checkbox" className="form-check-input m-0 office-check" checked={allPicked} onChange={pickAll}
+                  ref={(el) => { if (el) el.indeterminate = pickedDocs.length > 0 && !allPicked; }}
+                  aria-label={allPicked ? 'Clear selection' : 'Select all'} title={allPicked ? 'Clear selection' : 'Select all'} disabled={Boolean(busy)} />
+                Name
+              </span>
               {showFolderColumn && <span role="columnheader" className="d-none d-lg-block">Location</span>}
               <span role="columnheader" className="d-none d-sm-block">{view === 'trash' ? 'Deleted' : 'Modified'}</span>
               <span role="columnheader" className="d-none d-md-block text-end">Size</span>
               <span />
             </div>
-            {docs.map((d) => {
+            {docs.map((d, index) => {
               const k = KIND[d.kind];
               const trashed = Boolean(d.trashedAt);
               const where = d.folderId && tree.byId.has(d.folderId) ? tree.pathNames(d.folderId).join(' / ') : '—';
@@ -387,18 +538,21 @@ export default function OfficeHome() {
                   { label: 'Open', icon: faFolderOpen, onClick: () => navigate(`/office/${k.path}/${d.id}`) },
                   { label: 'Rename', icon: faPen, onClick: () => setModal({ type: 'rename', doc: d }) },
                   { label: 'Make a copy', icon: faCopy, onClick: () => copyDoc(d).catch(() => {}) },
+                  ...(canExport(d.kind) ? [{ label: d.kind === 'sheet' ? 'Download (.xlsx)' : 'Download (.docx)', icon: faDownload, onClick: () => downloadDoc(d) }] : []),
                   { label: 'Move to…', icon: faArrowRightToBracket, onClick: () => setModal({ type: 'moveDoc', doc: d }) },
                   { label: 'Move to trash', icon: faTrashCan, danger: true, onClick: () => trashDoc(d).catch(() => {}) },
                 ];
               return (
-                <div key={d.id} className="office-row" role="row" draggable={!trashed}
+                <div key={d.id} className={`office-row${picked.has(d.id) ? ' picked' : ''}`} role="row" draggable={!trashed}
                   onDragStart={(e) => { e.dataTransfer.setData(DRAG_ITEM, d.id); e.dataTransfer.effectAllowed = 'move'; }}>
                   <span role="cell" className="d-flex align-items-center gap-2 min-w-0">
+                    <input type="checkbox" className="form-check-input m-0 office-check" checked={picked.has(d.id)} disabled={Boolean(busy)}
+                      onChange={() => {}} onClick={(e) => pick(index, e.shiftKey)} aria-label={`Select ${d.title || k.untitled}`} />
                     <FontAwesomeIcon icon={k.icon} style={{ color: k.color }} fixedWidth />
                     {trashed ? (
-                      <span className="text-truncate">{d.title || 'Untitled document'}</span>
+                      <span className="text-truncate">{d.title || k.untitled}</span>
                     ) : (
-                      <Link to={`/office/${k.path}/${d.id}`} className="office-name text-truncate">{d.title || 'Untitled document'}</Link>
+                      <Link to={`/office/${k.path}/${d.id}`} className="office-name text-truncate">{d.title || k.untitled}</Link>
                     )}
                   </span>
                   {showFolderColumn && (
@@ -417,7 +571,7 @@ export default function OfficeHome() {
       </main>
 
       <input ref={docxInput} type="file" className="d-none" onChange={onImport}
-        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        accept=".docx,.xlsx,.csv,.tsv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
 
       {modal?.type === 'rename' && <RenameModal doc={modal.doc} onRenamed={() => refresh()} onClose={() => setModal(null)} />}
       {modal?.type === 'moveDoc' && (
@@ -445,8 +599,18 @@ export default function OfficeHome() {
         />
       )}
       {modal?.type === 'deleteDoc' && (
-        <ConfirmModal title="Delete forever?" message={`"${modal.doc.title || 'Untitled document'}" can't be recovered afterwards.`}
+        <ConfirmModal title="Delete forever?" message={`"${modal.doc.title || KIND[modal.doc.kind]?.untitled || 'Untitled document'}" can't be recovered afterwards.`}
           confirmLabel="Delete forever" onConfirm={() => deleteDoc(modal.doc)} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === 'movePicked' && (
+        <MoveToFolderModal tree={tree} title={`Move ${plural(pickedDocs.length, 'document')} to…`} currentId={null}
+          onMove={(folderId) => bulk('Moving', (d) => officeApi.update(d.id, { folderId }), (n) => `${plural(n, 'document')} moved`)}
+          onClose={() => setModal(null)} />
+      )}
+      {modal?.type === 'deletePicked' && (
+        <ConfirmModal title="Delete forever?" message={`${plural(pickedDocs.length, 'document')} will be deleted and can't be recovered afterwards.`}
+          confirmLabel="Delete forever" onConfirm={() => bulk('Deleting', (d) => officeApi.remove(d.id), (n) => `${plural(n, 'document')} deleted forever`)}
+          onClose={() => setModal(null)} />
       )}
       {modal?.type === 'emptyTrash' && (
         <ConfirmModal title="Empty the trash?" message="Every document in the trash is deleted forever."

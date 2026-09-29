@@ -38,7 +38,7 @@ describe('office documents', () => {
     await as(bob).get(`${D}/${document.id}`).expect(404);
     await as(bob).patch(`${D}/${document.id}`).send({ folderId: null }).expect(404);
     assert.equal((await as(bob).get(D)).body.documents.length, 0);
-    await as(alice).post(D).send({ kind: 'sheet' }).expect(400);
+    await as(alice).post(D).send({ kind: 'slides' }).expect(400);
     await api().get(D).expect(401);
   });
 

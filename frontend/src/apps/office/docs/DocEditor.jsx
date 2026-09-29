@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import { CharacterCount, Placeholder } from '@tiptap/extensions';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -414,5 +414,6 @@ export default function DocEditor() {
   const sync = useDocumentSync(docId, { onError });
 
   if (!sync.doc || !sync.settings) return <Spinner fullscreen />;
+  if (sync.doc.kind === 'sheet') return <Navigate to={`/office/sheets/${docId}`} replace />;
   return <DocWorkspace key={`${docId}:${sync.loadKey}`} sync={sync} />;
 }

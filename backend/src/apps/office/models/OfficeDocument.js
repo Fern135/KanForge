@@ -10,14 +10,14 @@ const marginsSchema = new Schema(
 const documentSchema = new Schema(
   {
     owner: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    // doc (Docs) for now; sheet and slides come with their editors.
+    // doc (Docs) and sheet (Sheets); slides comes with its editor.
     kind: { type: String, enum: ['doc', 'sheet', 'slides'], required: true },
     title: { type: String, trim: true, maxlength: 200, default: '' },
     // The editor's JSON document, rebuilt by the kind's sanitizer before every save.
     content: { type: Schema.Types.Mixed, required: true },
     // Plain-text copy of the content, for search.
     text: { type: String, default: '' },
-    // Page setup (Docs).
+    // Page setup, for printing.
     settings: {
       pageSize: { type: String, default: 'letter' },
       orientation: { type: String, default: 'portrait' },

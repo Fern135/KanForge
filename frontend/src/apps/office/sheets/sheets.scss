@@ -1,0 +1,266 @@
+// Sheets: an Excel / Calc-style grid. Shares the window chrome (title bar,
+// menus, toolbar, status bar) with Docs (docs.scss).
+
+$excel-green: #217346;
+$excel-green-dark: #185c37;
+$select-fill: rgba(33, 115, 70, 0.1);
+$header-bg: #f3f3f3;
+$header-line: #d4d4d4;
+$gridline: #e1e1e1;
+
+.sheet-home { color: $excel-green; &:hover { background: #e8f3ed; color: $excel-green-dark; } }
+
+.sheet-app .doc-tool.active { background: #cfe8d9; color: $excel-green-dark; }
+.sheet-select-fmt { width: 7.25rem; margin-left: 0.25rem; }
+.sheet-dp { font-size: 0.75rem; font-weight: 600; sub { font-size: 0.6rem; } }
+.sheet-sigma { font-size: 1.05rem; font-weight: 600; line-height: 1; }
+.sheet-valign, .sheet-wrap { font-size: 1rem; font-weight: 600; line-height: 1; }
+.sheet-zoom-range { accent-color: $excel-green; }
+
+// Name box and formula bar
+.sheet-formula-bar {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid #e3e3e3;
+  background: #fff;
+  font-size: 0.85rem;
+}
+.sheet-namebox {
+  width: 6.5rem;
+  flex-shrink: 0;
+  padding: 0.2rem 0.5rem;
+  border: 0;
+  border-right: 1px solid #e3e3e3;
+  font-family: system-ui, sans-serif;
+  &:focus { outline: 2px solid $excel-green; outline-offset: -2px; }
+}
+.sheet-fx {
+  display: flex;
+  align-items: center;
+  padding: 0 0.6rem;
+  border-right: 1px solid #e3e3e3;
+  color: #707070;
+  font-style: italic;
+  font-family: Georgia, serif;
+}
+.sheet-formula {
+  flex: 1;
+  min-width: 0;
+  height: 1.8rem;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  resize: none;
+  overflow: hidden;
+  font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif;
+  white-space: pre;
+  &:focus { outline: none; height: auto; min-height: 1.8rem; max-height: 6rem; overflow: auto; field-sizing: content; }
+}
+
+// The grid
+.sheet-main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #fff;
+}
+.sheet-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: #fff;
+  overscroll-behavior: contain;
+}
+.sheet-sizer { position: relative; }
+.sheet-pane {
+  position: sticky;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif;
+  color: #000;
+}
+.sheet-quad { position: absolute; overflow: hidden; }
+.sheet-layer { position: absolute; left: 0; top: 0; will-change: transform; }
+
+.sheet-vline, .sheet-hline { position: absolute; background: $gridline; pointer-events: none; }
+.sheet-vline { width: 1px; }
+.sheet-hline { height: 1px; }
+.no-gridlines { .sheet-vline, .sheet-hline { display: none; } }
+
+.sheet-cell {
+  position: absolute;
+  overflow: hidden;
+  &.spill { overflow: visible; z-index: 1; }
+}
+.sheet-text {
+  position: absolute;
+  top: 0;
+  bottom: 1px;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 4px;
+  overflow: hidden;
+  line-height: 1.25;
+  white-space: pre;
+  &.v-bottom { justify-content: flex-end; }
+  &.v-middle { justify-content: center; }
+  &.v-top { justify-content: flex-start; padding-top: 1px; }
+  &.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+}
+
+.sheet-heads-top, .sheet-heads-left { position: absolute; background: $header-bg; z-index: 6; }
+.sheet-heads-top { top: 0; border-bottom: 1px solid $header-line; }
+.sheet-heads-left { left: 0; border-right: 1px solid $header-line; }
+.sheet-colhead, .sheet-rowhead {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  color: #444;
+  font: calc(11px * var(--z, 1)) system-ui, sans-serif;
+  background: $header-bg;
+  &.on { background: #d9d9d9; color: $excel-green-dark; font-weight: 600; }
+  &.full { background: #c6e0d0; }
+}
+.sheet-colhead { top: 0; border-right: 1px solid $header-line; &.on { box-shadow: inset 0 -2px 0 $excel-green; } }
+.sheet-rowhead { left: 0; border-bottom: 1px solid $header-line; &.on { box-shadow: inset -2px 0 0 $excel-green; } }
+.sheet-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 7;
+  background: #e6e6e6;
+  border-right: 1px solid $header-line;
+  border-bottom: 1px solid $header-line;
+  cursor: pointer;
+  &::after {
+    content: '';
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    border: 5px solid transparent;
+    border-right-color: #b5b5b5;
+    border-bottom-color: #b5b5b5;
+  }
+}
+
+.sheet-sel, .sheet-sel-border, .sheet-active, .sheet-fill-preview, .sheet-point, .sheet-copied {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.sheet-sel { background: $select-fill; z-index: 2; }
+.sheet-sel-border { border: 1px solid $excel-green; z-index: 3; }
+.sheet-active { border: 2px solid $excel-green; z-index: 3; }
+.sheet-fill-preview { border: 1px dashed #444; z-index: 3; }
+.sheet-point { border: 2px dashed #1a73e8; background: rgba(26, 115, 232, 0.08); z-index: 3; }
+.sheet-copied { border: 2px dashed $excel-green; z-index: 3; animation: sheet-ants 1s linear infinite; }
+@keyframes sheet-ants { 50% { border-color: #8fc5a5; } }
+.sheet-fill-handle {
+  position: absolute;
+  z-index: 4;
+  width: 8px;
+  height: 8px;
+  background: $excel-green;
+  border: 1px solid #fff;
+  cursor: crosshair;
+}
+.sheet-freeze-line { position: absolute; z-index: 5; background: #bdbdbd; pointer-events: none; &.v { width: 2px; } &.h { height: 2px; } }
+.sheet-guide { position: absolute; z-index: 10; background: $excel-green; pointer-events: none; &.v { top: 0; bottom: 0; width: 1px; } &.h { left: 0; right: 0; height: 1px; } }
+
+// The text box on the active cell: invisible until you type.
+.sheet-input {
+  position: absolute;
+  z-index: 5;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 1px 4px;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.25;
+  white-space: pre;
+  opacity: 0;
+  caret-color: transparent;
+  pointer-events: none;
+  &.editing {
+    opacity: 1;
+    caret-color: auto;
+    pointer-events: auto;
+    field-sizing: content;
+    max-width: 40rem;
+    box-shadow: 0 0 0 2px $excel-green, 0 2px 6px rgba(0, 0, 0, 0.2);
+    user-select: text;
+    -webkit-user-select: text;
+  }
+}
+
+// Sheet tabs
+.sheet-tabs {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  height: 30px;
+  background: #f3f2f1;
+  border-top: 1px solid #d6d6d6;
+  font-size: 0.8rem;
+}
+.sheet-tab-add {
+  width: 34px;
+  flex-shrink: 0;
+  border: 0;
+  border-right: 1px solid #d6d6d6;
+  background: none;
+  color: #555;
+  &:hover { background: #e1e1e1; }
+}
+.sheet-tab-list {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.sheet-tab {
+  flex-shrink: 0;
+  max-width: 14rem;
+  padding: 0 0.9rem;
+  border: 0;
+  border-right: 1px solid #dcdcdc;
+  background: none;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  &:hover { background: #e8e8e8; }
+  &.active { background: #fff; color: $excel-green-dark; font-weight: 600; box-shadow: inset 0 -2px 0 $excel-green; }
+}
+.sheet-tab-rename { width: 9rem; margin: 3px; padding: 0 0.4rem; border: 1px solid $excel-green; font-size: 0.8rem; }
+.sheet-tab-menu { position: fixed; top: auto; min-width: 10rem; }
+
+.sheet-stats { display: inline-flex; gap: 1rem; }
+.sheet-find { z-index: 20; }
+.sheet-context { min-width: 14rem; z-index: 1060; }
+
+// Printing: only the table built for printing (printSheet.js).
+.sheet-print { display: none; }
+@media print {
+  body.sheet-printing {
+    background: #fff !important;
+    > *:not(.sheet-print) { display: none !important; }
+    .sheet-print { display: block; }
+  }
+  .sheet-print {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    table { border-collapse: collapse; table-layout: fixed; font: 11pt Calibri, Carlito, "Segoe UI", Arial, sans-serif; color: #000; }
+    td { padding: 0 4px; overflow: hidden; white-space: pre; line-height: 1.25; }
+    tr { break-inside: avoid; }
+    &.gridlines td { border: 1px solid #d0d0d0; }
+  }
+}
