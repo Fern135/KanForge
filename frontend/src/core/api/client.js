@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { WORKSPACE_SLUG } from '../workspaceUrl';
 
 // The access token lives only in memory, never in localStorage, so injected
 // scripts can't lift it from storage. The long-lived refresh token is an
@@ -17,7 +18,8 @@ const api = axios.create({
   baseURL: '/api',
   timeout: 15000,
   withCredentials: true,
-  headers: { 'Content-Type': 'application/json' },
+  // Inside a workspace, every request names it. The server checks membership each time.
+  headers: { 'Content-Type': 'application/json', ...(WORKSPACE_SLUG && { 'X-Workspace': WORKSPACE_SLUG }) },
   // The double-submit CSRF token, required by /auth/refresh and /auth/logout.
   xsrfCookieName: 'csrf',
   xsrfHeaderName: 'X-CSRF-Token',

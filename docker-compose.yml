@@ -24,6 +24,8 @@ x-api-env: &api-env
   COOKIE_SECURE: "true"
   TRUST_PROXY: "1"
   LOG_LEVEL: ${LOG_LEVEL:-info}
+  # Plan for new workspaces: self-hosted (every app, no limits), standard or plus.
+  DEFAULT_PLAN: ${DEFAULT_PLAN:-self-hosted}
 
 services:
   mongo:

@@ -7,6 +7,8 @@ const List = require('../models/List');
 const Card = require('../models/Card');
 const Comment = require('../models/Comment');
 const User = require('../../../core/models/User');
+const Membership = require('../../../core/models/Membership');
+const { planOf } = require('../../../core/plans');
 const cache = require('../cache');
 const { requireBoardMember, requireBoardOwner } = require('../middleware/boardAccess');
 const { body, ids, z } = require('../../../core/middleware/validate');
@@ -15,8 +17,9 @@ const s = require('../serialize');
 const listsRouter = require('./lists');
 const cardsRouter = require('./cards');
 
-// Counts every board a person is on, whether they own it or it was shared with them.
-const MAX_BOARDS_PER_USER = 100;
+// The plan caps how many boards one person can be on in a workspace, whether they
+// own them or they were shared with them (null = no limit).
+const maxBoards = (req) => planOf(req.workspace.plan).maxBoardsPerUser;
 const boardCount = (userId) => Board.countDocuments({ 'members.user': userId });
 const { LABEL_COLORS, BOARD_BACKGROUNDS } = Board;
 const DEFAULT_LABELS = ['green', 'yellow', 'orange', 'red', 'purple', 'blue'].map((color) => ({ name: '', color }));
@@ -59,24 +62,23 @@ module.exports = function boardsRouter(limiters) {
   const router = express.Router();
 
   router.get('/', async (req, res) => {
-    const [boards, used] = await Promise.all([
-      Board.find({ 'members.user': req.user.id })
-        .select('title background members updatedAt')
-        .sort({ updatedAt: -1 })
-        .limit(MAX_BOARDS_PER_USER)
-        .lean(),
-      boardCount(req.user.id),
-    ]);
+    const max = maxBoards(req);
+    const query = Board.find({ 'members.user': req.user.id })
+      .select('title background members updatedAt')
+      .sort({ updatedAt: -1 });
+    if (max) query.limit(max);
+    const [boards, used] = await Promise.all([query.lean(), boardCount(req.user.id)]);
     res.json({
       boards: boards.map((b) => s.boardSummary(b, req.user.id)),
-      limit: { used, max: MAX_BOARDS_PER_USER },
+      limit: { used, max },
     });
   });
 
   router.post('/', body(createSchema), async (req, res) => {
-    if (await boardCount(req.user.id) >= MAX_BOARDS_PER_USER) {
+    const max = maxBoards(req);
+    if (max && (await boardCount(req.user.id)) >= max) {
       throw AppError.badRequest(
-        `You're on ${MAX_BOARDS_PER_USER} boards, the most you can have. Delete or leave a board to create a new one.`,
+        `You're on ${max} boards, the most your plan allows. Delete or leave a board to create a new one.`,
         'LIMIT',
       );
     }
@@ -122,15 +124,20 @@ module.exports = function boardsRouter(limiters) {
 
   // Members
   router.post('/:boardId/members', limiters.sensitive, requireBoardOwner, body(memberSchema), async (req, res) => {
+    // Only people in this workspace can be added. Unknown emails and people in other
+    // workspaces get the same answer, so this can't be used to look up accounts.
     const user = await User.findOne({ email: req.body.email }).select('name email').lean();
-    if (!user) throw AppError.notFound('No account exists with that email', 'USER_NOT_FOUND');
+    if (!user || !(await Membership.exists({ workspace: req.workspace.id, user: user._id }))) {
+      throw AppError.notFound('No one in this workspace uses that email', 'USER_NOT_FOUND');
+    }
     if (req.board.members.some((m) => String(m.user) === String(user._id))) {
       throw AppError.conflict('That user is already a member', 'ALREADY_MEMBER');
     }
     // Without this, invites could push someone past the limit and hide their oldest boards.
-    if (await boardCount(user._id) >= MAX_BOARDS_PER_USER) {
+    const max = maxBoards(req);
+    if (max && (await boardCount(user._id)) >= max) {
       throw AppError.conflict(
-        `That person is already on ${MAX_BOARDS_PER_USER} boards, the most anyone can have. They need to leave one first.`,
+        `That person is already on ${max} boards, the most your plan allows. They need to leave one first.`,
         'MEMBER_BOARD_LIMIT',
       );
     }

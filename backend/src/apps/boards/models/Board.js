@@ -1,6 +1,7 @@
 'use strict';
 
 const { Schema, model } = require('mongoose');
+const { tenantPlugin } = require('../../../core/tenancy');
 
 const LABEL_COLORS = ['green', 'yellow', 'orange', 'red', 'purple', 'blue', 'navy', 'gray'];
 const BOARD_BACKGROUNDS = ['navy', 'green', 'gray', 'teal', 'slate', 'forest'];
@@ -27,6 +28,8 @@ const boardSchema = new Schema(
   },
   { timestamps: true },
 );
+
+boardSchema.plugin(tenantPlugin);
 
 module.exports = model('Board', boardSchema);
 module.exports.LABEL_COLORS = LABEL_COLORS;

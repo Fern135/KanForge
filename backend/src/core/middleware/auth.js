@@ -47,10 +47,14 @@ function requireAdmin(req, _res, next) {
   next();
 }
 
-// Use after requireAuth. A turned-off app answers 404 on every route, as if it
-// weren't installed.
-const requireAppEnabled = (appState, id) => async (req, _res, next) => {
-  if (!(await appState.isEnabled(id))) throw AppError.notFound('This app is turned off', 'APP_DISABLED');
+// Use after requireWorkspace. An app outside the workspace's plan answers 403
+// PLAN_REQUIRED. A turned-off app answers 404 on every route, as if it weren't installed.
+const requireAppEnabled = (appState, id) => (req, _res, next) => {
+  const app = appState.find(req.workspace, id);
+  if (!app?.included) {
+    throw AppError.forbidden(`${app?.name || 'This app'} isn't included in this workspace's plan`, 'PLAN_REQUIRED');
+  }
+  if (!app.enabled) throw AppError.notFound('This app is turned off', 'APP_DISABLED');
   next();
 };
 

@@ -1,6 +1,7 @@
 'use strict';
 
 const { Schema, model } = require('mongoose');
+const { tenantPlugin } = require('../../../core/tenancy');
 
 const commentSchema = new Schema(
   {
@@ -11,5 +12,7 @@ const commentSchema = new Schema(
   },
   { timestamps: true },
 );
+
+commentSchema.plugin(tenantPlugin);
 
 module.exports = model('Comment', commentSchema);

@@ -1,33 +1,34 @@
 import { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCubes, faUsers } from '@fortawesome/free-solid-svg-icons';
+import { faBuilding, faUsers } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../context/AuthContext';
-import { useApps } from '../context/AppsContext';
 import { useToast } from '../context/ToastContext';
 import { adminApi } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import Spinner from '../components/Spinner';
 
+const PLANS = [['self-hosted', 'Self-hosted'], ['standard', 'Standard'], ['plus', 'Plus']];
+
+// Platform admin: runs the whole server. Sees workspace metadata (name, plan,
+// seats), never what's inside a workspace.
 export default function Admin() {
   const { user, setUser } = useAuth();
-  const { refresh: refreshApps } = useApps();
   const toast = useToast();
-  const [apps, setApps] = useState(null);
+  const [workspaces, setWorkspaces] = useState(null);
   const [users, setUsers] = useState(null);
   const [busy, setBusy] = useState('');
 
   useEffect(() => {
-    adminApi.apps().then((d) => setApps(d.apps)).catch((err) => toast.error(errorMessage(err)));
+    adminApi.workspaces().then((d) => setWorkspaces(d.workspaces)).catch((err) => toast.error(errorMessage(err)));
     adminApi.users().then((d) => setUsers(d.users)).catch((err) => toast.error(errorMessage(err)));
   }, [toast]);
 
-  const toggleApp = async (app) => {
-    setBusy(`app:${app.id}`);
+  const updateWorkspace = async (ws, change, message) => {
+    setBusy(`ws:${ws.id}`);
     try {
-      const data = await adminApi.setAppEnabled(app.id, !app.enabled);
-      setApps(data.apps);
-      await refreshApps();
-      toast.success(`${app.name} turned ${app.enabled ? 'off' : 'on'}`);
+      const { workspace } = await adminApi.updateWorkspace(ws.id, change);
+      setWorkspaces((list) => list.map((w) => (w.id === ws.id ? workspace : w)));
+      toast.success(message);
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -50,27 +51,39 @@ export default function Admin() {
     }
   };
 
-  if (!apps || !users) return <Spinner fullscreen />;
+  if (!workspaces || !users) return <Spinner fullscreen />;
 
   return (
     <main className="container py-4" style={{ maxWidth: 760 }}>
-      <h1 className="h4 fw-bold text-primary mb-4">Admin</h1>
+      <h1 className="h4 fw-bold text-primary mb-4">Platform admin</h1>
 
       <section className="card border-0 shadow-sm mb-4">
         <div className="card-body">
-          <h2 className="h6 fw-bold mb-1"><FontAwesomeIcon icon={faCubes} className="me-2 text-success" />Apps</h2>
-          <p className="text-muted small mb-3">Turned-off apps are hidden from everyone, and their data is kept.</p>
+          <h2 className="h6 fw-bold mb-1"><FontAwesomeIcon icon={faBuilding} className="me-2 text-success" />Workspaces</h2>
+          <p className="text-muted small mb-3">
+            A plan decides a workspace&apos;s apps and limits. Auto-join adds everyone who signs up on this server to that workspace.
+          </p>
           <ul className="list-group list-group-flush">
-            {apps.map((app) => (
-              <li className="list-group-item px-0 d-flex align-items-center justify-content-between gap-3" key={app.id}>
-                <div>
-                  <div className="fw-semibold">{app.name}</div>
-                  <div className="text-muted small">{app.description}</div>
+            {workspaces.map((w) => (
+              <li className="list-group-item px-0 d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2" key={w.id}>
+                <div className="text-truncate">
+                  <span className="fw-semibold">{w.name}</span>
+                  <div className="text-muted small text-truncate">
+                    /app/w/{w.slug} · {w.seats} {w.seats === 1 ? 'seat' : 'seats'}
+                  </div>
                 </div>
-                <div className="form-check form-switch m-0">
-                  <input className="form-check-input" type="checkbox" role="switch" id={`app-${app.id}`}
-                    checked={app.enabled} disabled={busy === `app:${app.id}`} onChange={() => toggleApp(app)}
-                    aria-label={`${app.name} ${app.enabled ? 'on' : 'off'}`} />
+                <div className="d-flex align-items-center gap-3 flex-shrink-0">
+                  <div className="form-check form-switch m-0">
+                    <input className="form-check-input" type="checkbox" role="switch" id={`autojoin-${w.id}`}
+                      checked={w.autoJoin} disabled={busy === `ws:${w.id}`}
+                      onChange={() => updateWorkspace(w, { autoJoin: !w.autoJoin }, `Auto-join turned ${w.autoJoin ? 'off' : 'on'} for ${w.name}`)} />
+                    <label className="form-check-label small" htmlFor={`autojoin-${w.id}`}>Auto-join</label>
+                  </div>
+                  <select className="form-select form-select-sm" style={{ width: 'auto' }} value={w.plan} disabled={busy === `ws:${w.id}`}
+                    aria-label={`Plan for ${w.name}`}
+                    onChange={(e) => updateWorkspace(w, { plan: e.target.value }, `${w.name} is now on ${PLANS.find(([id]) => id === e.target.value)[1]}`)}>
+                    {PLANS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                  </select>
                 </div>
               </li>
             ))}
@@ -81,7 +94,7 @@ export default function Admin() {
       <section className="card border-0 shadow-sm">
         <div className="card-body">
           <h2 className="h6 fw-bold mb-1"><FontAwesomeIcon icon={faUsers} className="me-2 text-success" />Users</h2>
-          <p className="text-muted small mb-3">Admins can turn apps on and off and manage other admins. There's always at least one.</p>
+          <p className="text-muted small mb-3">Platform admins manage every workspace's plan and other platform admins. There's always at least one.</p>
           <ul className="list-group list-group-flush">
             {users.map((u) => (
               <li className="list-group-item px-0 d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2" key={u.id}>

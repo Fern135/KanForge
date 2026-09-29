@@ -2,7 +2,8 @@
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { setup, teardown, api, registerUser, auth } = require('./helpers');
+const { setup, teardown, api, registerUser, auth, TEST_WORKSPACE } = require('./helpers');
+const Workspace = require('../src/core/models/Workspace');
 
 const para = (...content) => ({ type: 'paragraph', content });
 const text = (t, marks) => (marks ? { type: 'text', text: t, marks } : { type: 'text', text: t });
@@ -150,11 +151,11 @@ describe('notes', () => {
   });
 
   it('is unavailable while the app is turned off', async () => {
-    const admin = alice.res.body.user.role === 'admin' ? alice : bob;
-    await api().patch('/api/admin/apps/notes').set(auth(admin.token)).send({ enabled: false }).expect(200);
+    const off = (enabled) => Workspace.updateOne({ slug: TEST_WORKSPACE }, { $set: { 'apps.notes': enabled } });
+    await off(false);
     const res = await as(bob).get('/api/notes');
     assert.equal(res.status, 404);
     assert.equal(res.body.error.code, 'APP_DISABLED');
-    await api().patch('/api/admin/apps/notes').set(auth(admin.token)).send({ enabled: true }).expect(200);
+    await off(true);
   });
 });

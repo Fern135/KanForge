@@ -7,6 +7,7 @@ const config = require('../config');
 const User = require('../models/User');
 const Settings = require('../models/Settings');
 const events = require('../services/events');
+const workspaces = require('../services/workspaces');
 const tokens = require('../services/tokens');
 const lockout = require('../services/lockout');
 const cache = require('../services/cache');
@@ -140,6 +141,7 @@ module.exports = function authRouter(limiters) {
       throw err;
     }
     await claimFirstAdmin(user);
+    await workspaces.joinAutoJoin(user._id);
     await startSession(req, res, user, 201);
   });
 

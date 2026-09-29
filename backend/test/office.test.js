@@ -38,7 +38,7 @@ describe('office documents', () => {
     await as(bob).get(`${D}/${document.id}`).expect(404);
     await as(bob).patch(`${D}/${document.id}`).send({ folderId: null }).expect(404);
     assert.equal((await as(bob).get(D)).body.documents.length, 0);
-    await as(alice).post(D).send({ kind: 'slides' }).expect(400);
+    await as(alice).post(D).send({ kind: 'drawing' }).expect(400);
     await api().get(D).expect(401);
   });
 
@@ -130,9 +130,9 @@ describe('office documents', () => {
     // Mongoose treats createdAt as immutable, so age the image through the raw collection.
     await OfficeImage.collection.updateMany({}, { $set: { createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) } });
     await as(u).post(`${D}/${used.id}/trash`);
-    assert.equal(await OfficeImage.countDocuments({ _id: id }), 1, 'still used by a document in the trash');
+    assert.equal(await OfficeImage.countDocuments({ _id: id }).setOptions({ allWorkspaces: true }), 1, 'still used by a document in the trash');
     await as(u).del(`${D}/${used.id}`).expect(204);
-    assert.equal(await OfficeImage.countDocuments({ _id: id }), 0);
+    assert.equal(await OfficeImage.countDocuments({ _id: id }).setOptions({ allWorkspaces: true }), 0);
   });
 
   it('accepts large documents', async () => {

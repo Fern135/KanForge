@@ -1,6 +1,7 @@
 'use strict';
 
 const { Schema, model } = require('mongoose');
+const { tenantPlugin } = require('../../../core/tenancy');
 
 const marginsSchema = new Schema(
   { top: Number, right: Number, bottom: Number, left: Number },
@@ -35,5 +36,7 @@ const documentSchema = new Schema(
   },
   { timestamps: true, minimize: false, collection: 'office_documents' },
 );
+
+documentSchema.plugin(tenantPlugin);
 
 module.exports = model('OfficeDocument', documentSchema);

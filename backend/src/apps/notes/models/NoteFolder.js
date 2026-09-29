@@ -1,6 +1,7 @@
 'use strict';
 
 const { Schema, model } = require('mongoose');
+const { tenantPlugin } = require('../../../core/tenancy');
 
 const folderSchema = new Schema(
   {
@@ -14,5 +15,7 @@ const folderSchema = new Schema(
   },
   { timestamps: true, collection: 'note_folders' },
 );
+
+folderSchema.plugin(tenantPlugin);
 
 module.exports = model('NoteFolder', folderSchema);

@@ -12,11 +12,13 @@ const { redis } = require('./core/db/redis');
 const { createLimiters } = require('./core/middleware/rateLimit');
 const { originCheck } = require('./core/middleware/csrf');
 const { requireAuth, requireAdmin, requireAppEnabled } = require('./core/middleware/auth');
+const { requireWorkspace } = require('./core/middleware/workspace');
 const { notFound, errorHandler } = require('./core/middleware/errorHandler');
 const { createAppState } = require('./core/services/appState');
 const authRouter = require('./core/routes/auth');
 const adminRouter = require('./core/routes/admin');
 const appsRouter = require('./core/routes/apps');
+const { workspacesRouter, currentWorkspaceRouter } = require('./core/routes/workspaces');
 const manifests = require('./apps');
 
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH']);
@@ -84,11 +86,16 @@ function createApp() {
   app.use(cookieParser());
   app.use(originCheck);
 
+  // Account-level routes: no workspace.
   app.use('/api/auth', authRouter(limiters));
-  app.use('/api/apps', requireAuth, appsRouter({ appState }));
-  app.use('/api/admin', requireAuth, requireAdmin, adminRouter({ limiters, appState }));
+  app.use('/api/workspaces', requireAuth, workspacesRouter({ limiters }));
+  app.use('/api/admin', requireAuth, requireAdmin, adminRouter({ limiters }));
+
+  // Everything below runs inside the workspace named by the X-Workspace header.
+  app.use('/api/workspace', requireAuth, requireWorkspace, currentWorkspaceRouter({ limiters, appState }));
+  app.use('/api/apps', requireAuth, requireWorkspace, appsRouter({ appState }));
   for (const m of manifests) {
-    app.use(`/api/${m.id}`, requireAuth, requireAppEnabled(appState, m.id), m.createRouter({ limiters }));
+    app.use(`/api/${m.id}`, requireAuth, requireWorkspace, requireAppEnabled(appState, m.id), m.createRouter({ limiters }));
   }
 
   app.use(notFound);

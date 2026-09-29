@@ -1,6 +1,7 @@
 'use strict';
 
 const { Schema, model } = require('mongoose');
+const { tenantPlugin } = require('../../../core/tenancy');
 
 // Images placed in documents. Kept out of the document itself so autosave
 // doesn't resend them, and only ever served to their owner.
@@ -13,5 +14,7 @@ const imageSchema = new Schema(
   },
   { timestamps: true, collection: 'office_images' },
 );
+
+imageSchema.plugin(tenantPlugin);
 
 module.exports = model('OfficeImage', imageSchema);

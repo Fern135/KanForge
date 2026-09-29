@@ -5,6 +5,7 @@ const config = require('../src/core/config');
 const { connectMongo, disconnectMongo, mongoose } = require('../src/core/db/mongo');
 const { redis, connectRedis, disconnectRedis } = require('../src/core/db/redis');
 const { createApp } = require('../src/app');
+const Workspace = require('../src/core/models/Workspace');
 const migrations = [
   require('../migrations/20260926000001-initial-schema'),
   require('../migrations/20260927000001-card-checklist-settings'),
@@ -14,6 +15,7 @@ const migrations = [
   require('../migrations/20260929000001-notes'),
   require('../migrations/20260929000002-note-folders'),
   require('../migrations/20260930000001-office'),
+  require('../migrations/20261001000001-workspaces'),
 ];
 
 if (!config.isTest || !new URL(config.mongoUri).pathname.endsWith('_test')) {
@@ -22,11 +24,16 @@ if (!config.isTest || !new URL(config.mongoUri).pathname.endsWith('_test')) {
 
 let app;
 
+// Every test account joins this workspace (it auto-joins sign-ups), and auth()
+// sends it by default, so app tests run inside a workspace like the real client.
+const TEST_WORKSPACE = 'test-space';
+
 async function setup() {
   await Promise.all([connectMongo(), connectRedis()]);
   await mongoose.connection.db.dropDatabase();
   for (const m of migrations) await m.up(mongoose.connection.db);
   await flushRedis();
+  await Workspace.create({ name: 'Test', slug: TEST_WORKSPACE, plan: 'self-hosted', autoJoin: true });
   app = createApp();
   return app;
 }
@@ -70,6 +77,10 @@ async function registerUser(overrides = {}) {
   return { ...creds, token: res.body.accessToken, user: res.body.user, cookies: cookiesFrom(res), res };
 }
 
-const auth = (token) => ({ Authorization: `Bearer ${token}` });
+// workspace: a slug to send in X-Workspace, or null to send none.
+const auth = (token, workspace = TEST_WORKSPACE) => ({
+  Authorization: `Bearer ${token}`,
+  ...(workspace ? { 'X-Workspace': workspace } : {}),
+});
 
-module.exports = { setup, teardown, api, registerUser, auth, cookiesFrom, flushRedis };
+module.exports = { setup, teardown, api, registerUser, auth, cookiesFrom, flushRedis, migrations, TEST_WORKSPACE };

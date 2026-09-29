@@ -1,6 +1,7 @@
 'use strict';
 
 const { Schema, model } = require('mongoose');
+const { tenantPlugin } = require('../../../core/tenancy');
 
 // Same shape as every app's folders (core/services/folderTree.js).
 const folderSchema = new Schema(
@@ -13,5 +14,7 @@ const folderSchema = new Schema(
   },
   { timestamps: true, collection: 'office_folders' },
 );
+
+folderSchema.plugin(tenantPlugin);
 
 module.exports = model('OfficeFolder', folderSchema);

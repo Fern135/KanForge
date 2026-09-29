@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEnvelope, faLock, faEye, faEyeSlash, faKey } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../context/AuthContext';
@@ -11,6 +11,8 @@ import AuthLayout from './AuthLayout';
 export default function Login() {
   const { login, loginWithPin } = useAuth();
   const navigate = useNavigate();
+  // Keeps ?next=, so signing in returns to the page that asked for it.
+  const { search } = useLocation();
   // The account this device can sign in to with a PIN: undefined while checking, null if none.
   const [pinUser, setPinUser] = useState(undefined);
   const [mode, setMode] = useState('password');
@@ -49,7 +51,7 @@ export default function Login() {
     setError('');
     try {
       await fn();
-      navigate('/', { replace: true });
+      navigate(`/${search}`, { replace: true });
     } catch (err) {
       if (err?.response?.data?.error?.code === 'PIN_DEVICE_UNKNOWN') {
         setPinUser(null);

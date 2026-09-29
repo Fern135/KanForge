@@ -1,46 +1,36 @@
 'use strict';
 
-const Settings = require('../models/Settings');
+const Workspace = require('../models/Workspace');
+const { planIncludesApp, planOf } = require('../plans');
 
-// Keeps each app's on/off state for one API process. Reads are cached briefly,
-// so with several API replicas a change takes up to CACHE_MS to reach them all.
-const CACHE_MS = 5_000;
-
+// Which apps a workspace can use. An app is on when the workspace's plan includes
+// it and its admins haven't turned it off.
 function createAppState(manifests) {
   const byId = new Map(manifests.map((m) => [m.id, m]));
-  let cached = null;
-  let cachedAt = 0;
 
-  async function overrides() {
-    if (cached && Date.now() - cachedAt < CACHE_MS) return cached;
-    const doc = await Settings.findById(Settings.INSTANCE).select('apps').lean();
-    cached = doc?.apps ? { ...doc.apps } : {};
-    cachedAt = Date.now();
-    return cached;
+  // workspace: req.workspace (plan and apps overrides).
+  function list(workspace) {
+    return manifests.map((m) => {
+      const included = planIncludesApp(workspace.plan, m.id);
+      const override = workspace.apps?.[m.id];
+      return {
+        id: m.id,
+        name: m.name,
+        description: m.description,
+        included,
+        enabled: included && (typeof override === 'boolean' ? override : m.defaultEnabled),
+      };
+    });
   }
 
-  async function list() {
-    const o = await overrides();
-    return manifests.map((m) => ({
-      id: m.id,
-      name: m.name,
-      description: m.description,
-      enabled: typeof o[m.id] === 'boolean' ? o[m.id] : m.defaultEnabled,
-    }));
+  const find = (workspace, id) => list(workspace).find((a) => a.id === id);
+
+  async function setEnabled(workspace, id, enabled) {
+    await Workspace.updateOne({ _id: workspace.id }, { $set: { [`apps.${id}`]: enabled } });
+    workspace.apps = { ...workspace.apps, [id]: enabled };
   }
 
-  async function isEnabled(id) {
-    return (await list()).find((a) => a.id === id)?.enabled ?? false;
-  }
-
-  async function setEnabled(id, enabled) {
-    if (!byId.has(id)) return false;
-    await Settings.updateOne({ _id: Settings.INSTANCE }, { $set: { [`apps.${id}`]: enabled } }, { upsert: true });
-    cached = null;
-    return true;
-  }
-
-  return { list, isEnabled, setEnabled, has: (id) => byId.has(id) };
+  return { list, find, setEnabled, has: (id) => byId.has(id), planName: (workspace) => planOf(workspace.plan).name };
 }
 
 module.exports = { createAppState };

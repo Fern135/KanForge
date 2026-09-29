@@ -1,6 +1,7 @@
 'use strict';
 
 const { Schema, model } = require('mongoose');
+const { tenantPlugin } = require('../../../core/tenancy');
 
 const checklistItemSchema = new Schema({
   text: { type: String, required: true, trim: true, maxlength: 200 },
@@ -25,5 +26,7 @@ const cardSchema = new Schema(
   },
   { timestamps: true },
 );
+
+cardSchema.plugin(tenantPlugin);
 
 module.exports = model('Card', cardSchema);

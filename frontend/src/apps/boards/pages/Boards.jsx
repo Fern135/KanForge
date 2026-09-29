@@ -54,8 +54,9 @@ function CreateBoardModal({ onClose, onCreated }) {
 // Warn once someone is on 80% of the boards they're allowed, so the limit is never a surprise.
 const WARN_AT = 0.8;
 
+// max is null when the workspace's plan has no board limit.
 function BoardLimitNotice({ used, max }) {
-  if (used < max * WARN_AT) return null;
+  if (!max || used < max * WARN_AT) return null;
   const full = used >= max;
   return (
     <div className={`alert ${full ? 'alert-danger' : 'alert-warning'} d-flex gap-2 align-items-start`} role="status">
@@ -66,8 +67,8 @@ function BoardLimitNotice({ used, max }) {
         </div>
         <div className="small">
           {full
-            ? "That's the most you can have, so you can't create a board or be added to one. Delete a board you own, or leave one that was shared with you, to free up space."
-            : `You can be on up to ${max} boards, counting the ones shared with you. Delete or leave boards you no longer need to keep room for new ones.`}
+            ? "That's the most your plan allows, so you can't create a board or be added to one. Delete a board you own, or leave one that was shared with you, to free up space."
+            : `Your plan allows up to ${max} boards per person, counting the ones shared with you. Delete or leave boards you no longer need, or move to Plus for unlimited boards.`}
         </div>
       </div>
     </div>
@@ -92,7 +93,7 @@ export default function Boards() {
   }, [toast]);
 
   if (!boards) return <Spinner fullscreen />;
-  const full = limit ? limit.used >= limit.max : false;
+  const full = Boolean(limit?.max) && limit.used >= limit.max;
 
   return (
     <main className="container py-4">

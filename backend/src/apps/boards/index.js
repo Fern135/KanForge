@@ -1,16 +1,39 @@
 'use strict';
 
 const express = require('express');
+const { Types } = require('mongoose');
 const { limiter, perUser, READS } = require('../../core/middleware/rateLimit');
 const events = require('../../core/services/events');
 const Board = require('./models/Board');
 const cache = require('./cache');
 const boardsRouter = require('./routes/boards');
 
-// Board payloads embed member names, so a rename drops every board the user is on.
+// Board payloads embed member names, so a rename drops every board the user is on,
+// in every workspace.
 events.on('user.renamed', async (userId) => {
-  const boards = await Board.find({ 'members.user': userId }).select('_id').lean();
+  const boards = await Board.find({ 'members.user': userId }).setOptions({ allWorkspaces: true }).select('_id').lean();
   await Promise.all(boards.map((b) => cache.invalidateBoard(String(b._id))));
+});
+
+// Runs inside the workspace the person was removed from (see tenancy.js). Boards
+// they owned pass to the successor, and they come off every other board.
+events.on('workspace.memberRemoved', async ({ userId, successorId }) => {
+  const boards = await Board.find({ 'members.user': userId }).select('members').lean();
+  for (const b of boards) {
+    const wasOwner = b.members.some((m) => String(m.user) === userId && m.role === 'owner');
+    await Board.updateOne({ _id: b._id }, { $pull: { members: { user: userId } } });
+    if (wasOwner) {
+      const successorIsMember = b.members.some((m) => String(m.user) === successorId);
+      await Board.updateOne(
+        { _id: b._id },
+        successorIsMember
+          ? { $set: { 'members.$[s].role': 'owner' } }
+          : { $push: { members: { user: successorId, role: 'owner' } } },
+        successorIsMember ? { arrayFilters: [{ 's.user': new Types.ObjectId(successorId) }] } : {},
+      );
+    }
+    await cache.invalidateBoard(String(b._id));
+  }
 });
 
 module.exports = {

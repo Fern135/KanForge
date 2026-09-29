@@ -1,23 +1,40 @@
-import { lazy, Suspense } from 'react';
-import { Link, Navigate, Route, Routes, useParams } from 'react-router';
+import { lazy, Suspense, useEffect } from 'react';
+import { Link, Navigate, Route, Routes, useLocation, useParams } from 'react-router';
 import { useAuth } from './core/context/AuthContext';
-import { useApps } from './core/context/AppsContext';
+import { useWorkspace } from './core/context/WorkspaceContext';
 import AppNavbar from './core/components/AppNavbar';
 import Spinner from './core/components/Spinner';
 import Login from './core/pages/Login';
 import Register from './core/pages/Register';
 import { APPS } from './apps';
+import {
+  WORKSPACE_SLUG, goTo, isWorkspacePath, lastWorkspace, workspaceUrl,
+} from './core/workspaceUrl';
 
 // Everything behind sign-in is split into its own chunk so the first paint stays
 // small. Each app's pages load only when that app is opened.
 const Home = lazy(() => import('./core/pages/Home'));
 const Account = lazy(() => import('./core/pages/Account'));
 const Admin = lazy(() => import('./core/pages/Admin'));
+const NewWorkspace = lazy(() => import('./core/pages/NewWorkspace'));
+const WorkspaceSettings = lazy(() => import('./core/pages/WorkspaceSettings'));
+
+// A full page load to a path under /app, outside the current workspace.
+function Leave({ to }) {
+  useEffect(() => goTo(`/app${to}`), [to]);
+  return <Spinner fullscreen />;
+}
 
 function Protected({ children }) {
   const { status } = useAuth();
+  const location = useLocation();
   if (status === 'loading') return <Spinner fullscreen />;
-  if (status !== 'authed') return <Navigate to="/login" replace />;
+  if (status !== 'authed') {
+    // Come back to this page after signing in.
+    return WORKSPACE_SLUG
+      ? <Leave to={`/login?next=${encodeURIComponent(window.location.pathname + location.search)}`} />
+      : <Navigate to="/login" replace />;
+  }
   return (
     <>
       <AppNavbar />
@@ -28,8 +45,9 @@ function Protected({ children }) {
 
 function PublicOnly({ children }) {
   const { status } = useAuth();
+  const location = useLocation();
   if (status === 'loading') return <Spinner fullscreen />;
-  if (status === 'authed') return <Navigate to="/" replace />;
+  if (status === 'authed') return <Navigate to={`/${location.search}`} replace />;
   return children;
 }
 
@@ -38,15 +56,40 @@ function AdminOnly({ children }) {
   return user?.role === 'admin' ? children : <Navigate to="/" replace />;
 }
 
-// Shows an app only while the server has it turned on.
+// Waits for the workspace, and stops at a clear message if the user isn't in it.
+function WorkspaceGate({ children }) {
+  const { status } = useWorkspace();
+  if (status === 'loading') return <Spinner fullscreen />;
+  if (status === 'missing') {
+    return (
+      <main className="container py-5 text-center">
+        <h1 className="h5 fw-bold">Workspace not found</h1>
+        <p className="text-muted">It doesn&apos;t exist, or you&apos;re not a member. Ask one of its admins to add you.</p>
+        <a href="/app/" className="btn btn-primary">Go to your workspaces</a>
+      </main>
+    );
+  }
+  return children;
+}
+
+// Shows an app only while the workspace's plan includes it and it's turned on.
 function AppGate({ id, children }) {
-  const { loading, isEnabled } = useApps();
-  if (loading) return <Spinner fullscreen />;
+  const { isEnabled, isIncluded } = useWorkspace();
   if (isEnabled(id)) return children;
+  const name = APPS.find((a) => a.id === id)?.name ?? 'This app';
   return (
     <main className="container py-5 text-center">
-      <h1 className="h5 fw-bold">This app is turned off</h1>
-      <p className="text-muted">An admin can turn it back on from the Admin page.</p>
+      {isIncluded(id) ? (
+        <>
+          <h1 className="h5 fw-bold">{name} is turned off</h1>
+          <p className="text-muted">A workspace admin can turn it back on in Workspace settings.</p>
+        </>
+      ) : (
+        <>
+          <h1 className="h5 fw-bold">{name} isn&apos;t in your plan</h1>
+          <p className="text-muted">It&apos;s included in the Plus plan. See <a href="/pricing">pricing</a>.</p>
+        </>
+      )}
       <Link to="/" className="btn btn-primary">Back to home</Link>
     </main>
   );
@@ -58,14 +101,39 @@ function LegacyBoardRedirect() {
   return <Navigate to={`/boards/${encodeURIComponent(boardId)}`} replace />;
 }
 
-export default function App() {
+// Outside a workspace: send the user into one. Priority: where they were headed
+// before signing in, then the workspace they used last, then their first.
+function ChooseWorkspace() {
+  const { workspaces } = useWorkspace();
+  const location = useLocation();
+  const next = new URLSearchParams(location.search).get('next');
+  const target = (() => {
+    if (!workspaces?.length) return null;
+    if (isWorkspacePath(next)) return next;
+    const last = workspaces.find((w) => w.slug === lastWorkspace());
+    // A path from before workspaces existed (e.g. /app/boards/123) opens in that workspace.
+    const legacy = location.pathname !== '/' ? location.pathname : '/';
+    return workspaceUrl((last || workspaces[0]).slug, legacy);
+  })();
+
+  useEffect(() => {
+    if (target) goTo(target);
+  }, [target]);
+
+  if (workspaces && !workspaces.length) return <Navigate to="/new" replace />;
+  return <Spinner fullscreen />;
+}
+
+function WorkspaceRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
-      <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
-      <Route path="/" element={<Protected><Home /></Protected>} />
+      <Route path="/login" element={<Leave to={`/login${window.location.search}`} />} />
+      <Route path="/register" element={<Leave to="/register" />} />
+      <Route path="/new" element={<Leave to="/new" />} />
+      <Route path="/" element={<Protected><WorkspaceGate><Home /></WorkspaceGate></Protected>} />
+      <Route path="/settings" element={<Protected><WorkspaceGate><WorkspaceSettings /></WorkspaceGate></Protected>} />
       {APPS.map(({ id, Routes: AppRoutes }) => (
-        <Route key={id} path={`/${id}/*`} element={<Protected><AppGate id={id}><AppRoutes /></AppGate></Protected>} />
+        <Route key={id} path={`/${id}/*`} element={<Protected><WorkspaceGate><AppGate id={id}><AppRoutes /></AppGate></WorkspaceGate></Protected>} />
       ))}
       <Route path="/b/:boardId" element={<LegacyBoardRedirect />} />
       <Route path="/account" element={<Protected><Account /></Protected>} />
@@ -73,4 +141,25 @@ export default function App() {
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
+}
+
+function AccountRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
+      <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
+      <Route path="/" element={<Protected><ChooseWorkspace /></Protected>} />
+      <Route path="/new" element={<Protected><NewWorkspace /></Protected>} />
+      <Route path="/account" element={<Protected><Account /></Protected>} />
+      <Route path="/admin" element={<Protected><AdminOnly><Admin /></AdminOnly></Protected>} />
+      {[...APPS.map((a) => a.id), 'b'].map((id) => (
+        <Route key={id} path={`/${id}/*`} element={<Protected><ChooseWorkspace /></Protected>} />
+      ))}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+export default function App() {
+  return WORKSPACE_SLUG ? <WorkspaceRoutes /> : <AccountRoutes />;
 }

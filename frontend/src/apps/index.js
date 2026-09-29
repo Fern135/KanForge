@@ -3,9 +3,9 @@ import {
   faTableColumns, faNoteSticky, faFileWord, faFolder, faEnvelope,
 } from '@fortawesome/free-solid-svg-icons';
 
-// Every app the frontend knows. Each one lives at /<id>/*, loads only when
-// opened, and may import from core but never from another app. The server
-// decides which apps are turned on (see AppsContext).
+// Every app the frontend knows. Each one lives at /app/w/<workspace>/<id>/*,
+// loads only when opened, and may import from core but never from another app.
+// The workspace's plan and admins decide which apps are on (see WorkspaceContext).
 export const APPS = [
   {
     id: 'boards',

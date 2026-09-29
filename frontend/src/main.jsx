@@ -5,8 +5,9 @@ import { config } from '@fortawesome/fontawesome-svg-core';
 import '@fortawesome/fontawesome-svg-core/styles.css';
 import './styles/theme.scss';
 import App from './App';
+import { ROUTER_BASENAME } from './core/workspaceUrl';
 import { AuthProvider } from './core/context/AuthContext';
-import { AppsProvider } from './core/context/AppsContext';
+import { WorkspaceProvider } from './core/context/WorkspaceContext';
 import { ToastProvider } from './core/context/ToastContext';
 
 // FontAwesome CSS is bundled above, so it doesn't need to inject a <style> tag at runtime.
@@ -14,12 +15,12 @@ config.autoAddCss = false;
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+    <BrowserRouter basename={ROUTER_BASENAME}>
       <ToastProvider>
         <AuthProvider>
-          <AppsProvider>
+          <WorkspaceProvider>
             <App />
-          </AppsProvider>
+          </WorkspaceProvider>
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>

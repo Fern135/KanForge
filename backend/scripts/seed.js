@@ -1,12 +1,15 @@
 'use strict';
 
-// Creates a demo user with a sample board. Refuses to run in production unless
-// ALLOW_SEED=true is set explicitly.
+// Creates a demo user in a "Demo" workspace with a sample board. Refuses to run
+// in production unless ALLOW_SEED=true is set explicitly.
 const crypto = require('node:crypto');
 const argon2 = require('argon2');
 const config = require('../src/core/config');
 const { connectMongo, disconnectMongo } = require('../src/core/db/mongo');
 const User = require('../src/core/models/User');
+const Workspace = require('../src/core/models/Workspace');
+const Membership = require('../src/core/models/Membership');
+const { runInWorkspace } = require('../src/core/tenancy');
 const Board = require('../src/apps/boards/models/Board');
 const List = require('../src/apps/boards/models/List');
 const Card = require('../src/apps/boards/models/Card');
@@ -30,6 +33,19 @@ async function main() {
     passwordHash: await argon2.hash(password, { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 }),
   });
 
+  let slug = 'demo';
+  while (await Workspace.exists({ slug })) slug = `demo-${crypto.randomBytes(3).toString('hex')}`;
+  const workspace = await Workspace.create({ name: 'Demo', slug, plan: config.defaultPlan, createdBy: user._id });
+  await Membership.create({ workspace: workspace._id, user: user._id, role: 'admin' });
+  await runInWorkspace(workspace._id, () => seedBoard(user));
+
+  console.log('Seeded demo data:');
+  console.log(`  email:     ${email}`);
+  console.log(`  password:  ${password}`);
+  console.log(`  workspace: /app/w/${slug}/`);
+}
+
+async function seedBoard(user) {
   const board = await Board.create({
     title: 'Product Launch',
     background: 'navy',
@@ -70,10 +86,6 @@ async function main() {
       cards.map((c, i) => ({ ...c, board: board._id, list: list._id, position: (i + 1) * 1024, createdBy: user._id })),
     );
   }
-
-  console.log('Seeded demo data:');
-  console.log(`  email:    ${email}`);
-  console.log(`  password: ${password}`);
 }
 
 main()

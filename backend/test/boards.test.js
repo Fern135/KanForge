@@ -4,6 +4,9 @@ const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, teardown, api, registerUser, auth } = require('./helpers');
 const Board = require('../src/apps/boards/models/Board');
+const Workspace = require('../src/core/models/Workspace');
+const Membership = require('../src/core/models/Membership');
+const { runInWorkspace } = require('../src/core/tenancy');
 
 async function makeBoard(token, title = 'Board') {
   const { body: b } = await api().post('/api/boards').set(auth(token)).send({ title }).expect(201);
@@ -105,27 +108,36 @@ describe('boards, lists, cards', () => {
     await api().get(`/api/boards/${boardId}`).set(auth(bob.token)).expect(404);
   });
 
-  it('reports board usage and caps boards per person, including shared ones', async () => {
+  it('caps boards per person on Standard, counting shared ones, and not on Plus', async () => {
     const carol = await registerUser({ name: 'Carol' });
     const dave = await registerUser({ name: 'Dave' });
-    await Board.insertMany(Array.from({ length: 99 }, (_, i) => ({
+    const ws = await Workspace.create({ name: 'Std', slug: 'std-space', plan: 'standard' });
+    await Membership.insertMany([carol, dave].map((u) => ({ workspace: ws._id, user: u.user.id, role: 'member' })));
+    const as = (u) => auth(u.token, 'std-space');
+    await runInWorkspace(ws._id, () => Board.insertMany(Array.from({ length: 99 }, (_, i) => ({
       title: `Filler ${i}`, members: [{ user: carol.user.id, role: 'owner' }],
-    })));
-    const { body: list } = await api().get('/api/boards').set(auth(carol.token)).expect(200);
+    }))));
+    const { body: list } = await api().get('/api/boards').set(as(carol)).expect(200);
     assert.deepEqual(list.limit, { used: 99, max: 100 });
 
     // Carol's 100th board is shared with her, so she can't create another or be invited to more.
-    const { boardId } = await makeBoard(dave.token);
-    await api().post(`/api/boards/${boardId}/members`).set(auth(dave.token)).send({ email: carol.email }).expect(201);
-    const { body: full } = await api().post('/api/boards').set(auth(carol.token)).send({ title: 'One more' }).expect(400);
+    const { body: b1 } = await api().post('/api/boards').set(as(dave)).send({ title: 'Shared' }).expect(201);
+    await api().post(`/api/boards/${b1.board.id}/members`).set(as(dave)).send({ email: carol.email }).expect(201);
+    const { body: full } = await api().post('/api/boards').set(as(carol)).send({ title: 'One more' }).expect(400);
     assert.equal(full.error.code, 'LIMIT');
-    const { boardId: other } = await makeBoard(dave.token);
-    const { body: invite } = await api().post(`/api/boards/${other}/members`).set(auth(dave.token)).send({ email: carol.email }).expect(409);
+    const { body: b2 } = await api().post('/api/boards').set(as(dave)).send({ title: 'Other' }).expect(201);
+    const { body: invite } = await api().post(`/api/boards/${b2.board.id}/members`).set(as(dave)).send({ email: carol.email }).expect(409);
     assert.equal(invite.error.code, 'MEMBER_BOARD_LIMIT');
 
     // Leaving a board frees a slot.
-    await api().delete(`/api/boards/${boardId}/members/${carol.user.id}`).set(auth(carol.token)).expect(204);
-    await api().post('/api/boards').set(auth(carol.token)).send({ title: 'One more' }).expect(201);
+    await api().delete(`/api/boards/${b1.board.id}/members/${carol.user.id}`).set(as(carol)).expect(204);
+    await api().post('/api/boards').set(as(carol)).send({ title: 'One more' }).expect(201);
+
+    // Plus has no limit.
+    await Workspace.updateOne({ _id: ws._id }, { $set: { plan: 'plus' } });
+    const { body: plus } = await api().get('/api/boards').set(as(carol)).expect(200);
+    assert.deepEqual(plus.limit, { used: 100, max: null });
+    await api().post('/api/boards').set(as(carol)).send({ title: 'Beyond' }).expect(201);
   });
 
   it('only accepts labels that belong to the board', async () => {

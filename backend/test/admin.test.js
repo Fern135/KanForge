@@ -6,7 +6,7 @@ const User = require('../src/core/models/User');
 const Settings = require('../src/core/models/Settings');
 const { setup, teardown, api, registerUser, auth } = require('./helpers');
 
-describe('admin and apps', () => {
+describe('platform admin', () => {
   let admin;
   let member;
 
@@ -24,46 +24,45 @@ describe('admin and apps', () => {
     assert.equal(me.body.user.role, 'user');
   });
 
-  it('keeps the admin API to admins', async () => {
-    await api().get('/api/admin/apps').expect(401);
-    await api().get('/api/admin/apps').set(auth(member.token)).expect(403);
-    await api().patch('/api/admin/apps/boards').set(auth(member.token)).send({ enabled: false }).expect(403);
+  it('keeps the platform admin API to platform admins', async () => {
+    await api().get('/api/admin/users').expect(401);
     await api().get('/api/admin/users').set(auth(member.token)).expect(403);
+    await api().get('/api/admin/workspaces').set(auth(member.token)).expect(403);
+    await api().patch('/api/admin/workspaces/aaaaaaaaaaaaaaaaaaaaaaaa').set(auth(member.token)).send({ plan: 'plus' }).expect(403);
     await api().get('/api/admin/users').set(auth(admin.token)).expect(200);
   });
 
-  it('turns an app off for everyone, and back on', async () => {
-    const listed = await api().get('/api/apps').set(auth(member.token)).expect(200);
-    assert.deepEqual(listed.body.apps.map((a) => a.id), ['boards', 'notes', 'office']);
+  it('lists workspaces with seat counts only, and sets plans and auto-join', async () => {
+    const { body } = await api().get('/api/admin/workspaces').set(auth(admin.token)).expect(200);
+    const ws = body.workspaces.find((w) => w.slug === 'test-space');
+    assert.deepEqual(Object.keys(ws).sort(), ['autoJoin', 'createdAt', 'id', 'name', 'plan', 'planName', 'seats', 'slug']);
+    assert.ok(ws.seats >= 2);
 
-    const off = await api().patch('/api/admin/apps/boards').set(auth(admin.token)).send({ enabled: false }).expect(200);
-    assert.equal(off.body.apps.find((a) => a.id === 'boards').enabled, false);
-    const blocked = await api().get('/api/boards').set(auth(member.token));
-    assert.equal(blocked.status, 404);
-    assert.equal(blocked.body.error.code, 'APP_DISABLED');
-    assert.deepEqual((await api().get('/api/apps').set(auth(member.token))).body.apps.map((a) => a.id), ['notes', 'office']);
+    const { body: changed } = await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({ plan: 'standard' }).expect(200);
+    assert.equal(changed.workspace.planName, 'Standard');
+    await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({ plan: 'gold' }).expect(400);
+    await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({}).expect(400);
+    await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({ plan: 'self-hosted' }).expect(200);
 
-    await api().patch('/api/admin/apps/boards').set(auth(admin.token)).send({ enabled: true }).expect(200);
-    await api().get('/api/boards').set(auth(member.token)).expect(200);
-  });
-
-  it('validates app changes', async () => {
-    await api().patch('/api/admin/apps/nope').set(auth(admin.token)).send({ enabled: false }).expect(404);
-    await api().patch('/api/admin/apps/boards').set(auth(admin.token)).send({ enabled: 'no' }).expect(400);
-    await api().patch('/api/admin/apps/boards').set(auth(admin.token)).send({ enabled: true, extra: 1 }).expect(400);
+    // With auto-join off, new sign-ups start with no workspace.
+    await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({ autoJoin: false }).expect(200);
+    const loner = await registerUser();
+    const { body: mine } = await api().get('/api/workspaces').set(auth(loner.token, null)).expect(200);
+    assert.deepEqual(mine.workspaces, []);
+    await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({ autoJoin: true }).expect(200);
   });
 
   it('promotes and demotes, and never removes the last admin', async () => {
     await api().patch(`/api/admin/users/${member.res.body.user.id}`).set(auth(admin.token)).send({ role: 'admin' }).expect(200);
-    await api().get('/api/admin/apps').set(auth(member.token)).expect(200);
+    await api().get('/api/admin/workspaces').set(auth(member.token)).expect(200);
 
     await api().patch(`/api/admin/users/${member.res.body.user.id}`).set(auth(admin.token)).send({ role: 'user' }).expect(200);
-    await api().get('/api/admin/apps').set(auth(member.token)).expect(403);
+    await api().get('/api/admin/workspaces').set(auth(member.token)).expect(403);
 
     const last = await api().patch(`/api/admin/users/${admin.res.body.user.id}`).set(auth(admin.token)).send({ role: 'user' });
     assert.equal(last.status, 409);
     assert.equal(last.body.error.code, 'LAST_ADMIN');
-    await api().get('/api/admin/apps').set(auth(admin.token)).expect(200);
+    await api().get('/api/admin/workspaces').set(auth(admin.token)).expect(200);
 
     await api().patch('/api/admin/users/bad-id').set(auth(admin.token)).send({ role: 'user' }).expect(400);
     await api().patch('/api/admin/users/aaaaaaaaaaaaaaaaaaaaaaaa').set(auth(admin.token)).send({ role: 'user' }).expect(404);

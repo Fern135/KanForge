@@ -1,6 +1,7 @@
 'use strict';
 
 const { z } = require('zod');
+const { PLAN_IDS } = require('../plans');
 
 // Fail fast on boot if the environment is missing or weak. Never fall back to
 // default secrets.
@@ -21,6 +22,9 @@ const schema = z.object({
   TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(1),
   BOARD_CACHE_TTL_SECONDS: z.coerce.number().int().min(5).max(3600).default(300),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  // The plan new workspaces start on. Self-hosted installs get every app with no
+  // limits. The hosted service sets this to "standard".
+  DEFAULT_PLAN: z.enum(PLAN_IDS).default('self-hosted'),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -47,6 +51,7 @@ module.exports = Object.freeze({
   trustProxy: env.TRUST_PROXY,
   logLevel: env.LOG_LEVEL,
   boardCacheTtl: env.BOARD_CACHE_TTL_SECONDS,
+  defaultPlan: env.DEFAULT_PLAN,
   jwt: Object.freeze({
     secret: env.JWT_ACCESS_SECRET,
     ttlSeconds: env.ACCESS_TOKEN_TTL_SECONDS,

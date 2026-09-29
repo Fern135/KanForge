@@ -1,6 +1,7 @@
 'use strict';
 
 const { Schema, model } = require('mongoose');
+const { tenantPlugin } = require('../../../core/tenancy');
 
 const listSchema = new Schema(
   {
@@ -10,5 +11,7 @@ const listSchema = new Schema(
   },
   { timestamps: true },
 );
+
+listSchema.plugin(tenantPlugin);
 
 module.exports = model('List', listSchema);

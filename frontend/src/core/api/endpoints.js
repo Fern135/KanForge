@@ -21,9 +21,26 @@ export const appsApi = {
   list: () => data(api.get('/apps')),
 };
 
+export const workspacesApi = {
+  list: () => data(api.get('/workspaces')),
+  create: (body) => data(api.post('/workspaces', body)),
+};
+
+// The workspace this page is in (sent in the X-Workspace header).
+export const workspaceApi = {
+  get: () => data(api.get('/workspace')),
+  rename: (name) => data(api.patch('/workspace', { name })),
+  members: () => data(api.get('/workspace/members')),
+  addMember: (email, role) => data(api.post('/workspace/members', { email, role })),
+  setRole: (userId, role) => data(api.patch(`/workspace/members/${encodeURIComponent(userId)}`, { role })),
+  removeMember: (userId) => api.delete(`/workspace/members/${encodeURIComponent(userId)}`),
+  setAppEnabled: (id, enabled) => data(api.patch(`/workspace/apps/${encodeURIComponent(id)}`, { enabled })),
+};
+
+// Platform admins: the whole server.
 export const adminApi = {
-  apps: () => data(api.get('/admin/apps')),
-  setAppEnabled: (id, enabled) => data(api.patch(`/admin/apps/${encodeURIComponent(id)}`, { enabled })),
   users: () => data(api.get('/admin/users')),
   setRole: (userId, role) => data(api.patch(`/admin/users/${encodeURIComponent(userId)}`, { role })),
+  workspaces: () => data(api.get('/admin/workspaces')),
+  updateWorkspace: (id, body) => data(api.patch(`/admin/workspaces/${encodeURIComponent(id)}`, body)),
 };
