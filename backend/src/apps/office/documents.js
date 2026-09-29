@@ -8,16 +8,18 @@ const folders = require('./folders');
 const { collectGarbage } = require('./images');
 const { sanitizeDocContent, EMPTY_DOC, PAGE_SIZES, DEFAULT_SETTINGS } = require('./docContent');
 const { sanitizeSheetContent, emptyWorkbook, SHEET_SETTINGS } = require('./sheetContent');
+const { sanitizeSlideContent, emptyDeck, SLIDE_SETTINGS } = require('./slideContent');
 const { body, ids, objectId, z } = require('../../core/middleware/validate');
 const AppError = require('../../core/utils/AppError');
 
 const MAX_DOCUMENTS_PER_USER = 1000;
 const MAX_LISTED = 1000;
 
-// Each kind's content check, starting content and page setup. Slides joins when its editor does.
+// Each kind's content check, starting content and page setup.
 const KINDS = {
   doc: { sanitize: sanitizeDocContent, empty: () => EMPTY_DOC, settings: DEFAULT_SETTINGS, name: 'Untitled document' },
   sheet: { sanitize: sanitizeSheetContent, empty: emptyWorkbook, settings: SHEET_SETTINGS, name: 'Untitled spreadsheet' },
+  slides: { sanitize: sanitizeSlideContent, empty: emptyDeck, settings: SLIDE_SETTINGS, name: 'Untitled presentation' },
 };
 const kind = z.enum(Object.keys(KINDS));
 

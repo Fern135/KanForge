@@ -23,7 +23,7 @@ import '../office.scss';
 const KIND = {
   doc: { icon: faFileWord, color: '#2b579a', label: 'Document', path: 'docs', untitled: 'Untitled document', ready: true },
   sheet: { icon: faFileExcel, color: '#217346', label: 'Spreadsheet', path: 'sheets', untitled: 'Untitled spreadsheet', ready: true },
-  slides: { icon: faFilePowerpoint, color: '#b7472a', label: 'Presentation', path: 'slides', untitled: 'Untitled presentation' },
+  slides: { icon: faFilePowerpoint, color: '#b7472a', label: 'Presentation', path: 'slides', untitled: 'Untitled presentation', ready: true },
 };
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -504,10 +504,14 @@ export default function OfficeHome() {
             {q ? 'No documents match.' : view === 'trash' ? 'The trash is empty.' : (
               <>
                 <FontAwesomeIcon icon={faFileWord} size="3x" className="mb-3" style={{ color: '#2b579a', opacity: 0.35 }} />
-                <p className="mb-3">No documents here yet.</p>
-                <button type="button" className="btn btn-primary" onClick={() => create('doc')}>
-                  <FontAwesomeIcon icon={faPlus} className="me-2" />Blank document
-                </button>
+                <p className="mb-3">No documents here yet. Start a blank one:</p>
+                <div className="d-flex flex-wrap justify-content-center gap-2">
+                  {Object.entries(KIND).filter(([, k]) => k.ready).map(([kind, k]) => (
+                    <button type="button" key={kind} className="btn btn-outline-primary" onClick={() => create(kind)}>
+                      <FontAwesomeIcon icon={k.icon} className="me-2" style={{ color: k.color }} />{k.label}
+                    </button>
+                  ))}
+                </div>
               </>
             )}
           </div>
@@ -538,7 +542,7 @@ export default function OfficeHome() {
                   { label: 'Open', icon: faFolderOpen, onClick: () => navigate(`/office/${k.path}/${d.id}`) },
                   { label: 'Rename', icon: faPen, onClick: () => setModal({ type: 'rename', doc: d }) },
                   { label: 'Make a copy', icon: faCopy, onClick: () => copyDoc(d).catch(() => {}) },
-                  ...(canExport(d.kind) ? [{ label: d.kind === 'sheet' ? 'Download (.xlsx)' : 'Download (.docx)', icon: faDownload, onClick: () => downloadDoc(d) }] : []),
+                  ...(canExport(d.kind) ? [{ label: `Download (.${{ sheet: 'xlsx', slides: 'pptx' }[d.kind] ?? 'docx'})`, icon: faDownload, onClick: () => downloadDoc(d) }] : []),
                   { label: 'Move to…', icon: faArrowRightToBracket, onClick: () => setModal({ type: 'moveDoc', doc: d }) },
                   { label: 'Move to trash', icon: faTrashCan, danger: true, onClick: () => trashDoc(d).catch(() => {}) },
                 ];

@@ -1,10 +1,11 @@
 import { officeApi } from './api';
 
 // Office documents as files: Word (.docx) for documents, Excel (.xlsx) for
-// spreadsheets. Several at once come as one .zip. The converters load only when used.
+// spreadsheets, PowerPoint (.pptx) for presentations. Several at once come as
+// one .zip. The converters load only when used.
 
-const UNTITLED = { doc: 'Untitled document', sheet: 'Untitled spreadsheet' };
-const EXT = { doc: 'docx', sheet: 'xlsx' };
+const UNTITLED = { doc: 'Untitled document', sheet: 'Untitled spreadsheet', slides: 'Untitled presentation' };
+const EXT = { doc: 'docx', sheet: 'xlsx', slides: 'pptx' };
 
 export const safeFileName = (title, kind) => (title || UNTITLED[kind] || 'Untitled').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').trim().slice(0, 100) || UNTITLED[kind];
 
@@ -23,6 +24,9 @@ export async function exportDocument(docId) {
     ]);
     const wb = fromContent(d.content);
     blob = exportXlsx(wb, new Engine(wb), d.title);
+  } else if (d.kind === 'slides') {
+    const [{ exportPptx }, { fromContent }] = await Promise.all([import('./slides/exportPptx'), import('./slides/model')]);
+    blob = await exportPptx(fromContent(d.content), d.title);
   } else {
     throw new Error('This kind of document can\'t be downloaded yet');
   }

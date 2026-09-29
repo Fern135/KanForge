@@ -1,0 +1,292 @@
+// Slides: a PowerPoint / Impress-style editor. Uses the Docs chrome (docs.scss).
+
+$ppt-orange: #b7472a;
+$select: #2b7cd3;
+
+.slide-home { color: $ppt-orange; &:hover { background: #fbeee9; color: #8f3720; } }
+
+.slide-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+// ---- Thumbnails ----
+
+.slide-panel {
+  flex-shrink: 0;
+  width: 212px;
+  padding: 0.75rem 0.5rem 1rem 0.25rem;
+  overflow-y: auto;
+  background: #f3f3f3;
+  border-right: 1px solid #d6d6d6;
+  outline: none;
+  @media (max-width: 767.98px) { display: none; }
+}
+
+.slide-thumb {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+  cursor: pointer;
+  .slide-frame {
+    border: 2px solid transparent;
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    box-sizing: content-box;
+  }
+  &:hover .slide-frame { border-color: #c8c8c8; }
+  &.active .slide-frame { border-color: $ppt-orange; }
+  &.drop-target .slide-frame { box-shadow: 0 -4px 0 $select; }
+}
+.slide-thumb-num {
+  width: 1.1rem;
+  padding-top: 0.1rem;
+  color: #5f6368;
+  font-size: 0.75rem;
+  text-align: right;
+}
+.slide-thumb-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+  .slide-thumb:hover &, &:focus-within { opacity: 1; }
+}
+.slide-thumb-menu {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.9);
+  color: #3c4043;
+  font-size: 0.8rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.slide-add {
+  display: block;
+  width: calc(100% - 1.45rem);
+  margin-left: 1.45rem;
+  padding: 0.4rem;
+  border: 2px dashed #c8c8c8;
+  border-radius: 3px;
+  background: none;
+  color: #5f6368;
+  font-size: 0.85rem;
+  &:hover { border-color: $ppt-orange; color: $ppt-orange; }
+}
+
+// ---- Editing area ----
+
+.slide-work {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.slide-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  outline: none;
+}
+
+.slide-canvas {
+  flex-shrink: 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+.slide-notes {
+  flex-shrink: 0;
+  height: 110px;
+  border-top: 1px solid #d6d6d6;
+  background: #fff;
+  textarea {
+    width: 100%;
+    height: 100%;
+    padding: 0.5rem 1rem;
+    border: 0;
+    outline: none;
+    resize: none;
+    font-size: 0.9rem;
+  }
+}
+
+.slide-notes-btn.active { background: #e8eaed; }
+
+// ---- A slide (shared by thumbnails, canvas, slide show and print) ----
+
+.slide-frame {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+}
+// While editing, items hanging off the slide and handles at its edge stay visible.
+.slide-canvas-frame,
+.slide-canvas-frame .slide-surface { overflow: visible; }
+
+.slide-surface {
+  position: relative;
+  transform-origin: 0 0;
+  overflow: hidden;
+}
+
+.slide-el {
+  position: absolute;
+  &.editable { cursor: move; }
+  &.editable:hover:not(.selected) { outline: 1px dashed rgba(43, 124, 211, 0.6); }
+  &.editing { cursor: text; }
+}
+
+.slide-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 3.6px 7.2px;
+  line-height: 1.2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.slide-lines { min-height: 1.2em; }
+.slide-list {
+  margin: 0;
+  padding-left: 1.3em;
+  li { padding-left: 0.1em; }
+}
+.slide-placeholder { opacity: 0.45; }
+
+.slide-shape-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.slide-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  user-select: none;
+}
+.slide-img-loading { background: rgba(0, 0, 0, 0.06); }
+
+.slide-edit {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 3.6px 7.2px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  line-height: 1.2;
+  resize: none;
+  overflow: hidden;
+  cursor: text;
+}
+
+.slide-outline {
+  position: absolute;
+  border: solid $select;
+  pointer-events: none;
+}
+
+.slide-handle {
+  position: absolute;
+  border: solid $select;
+  border-radius: 2px;
+  background: #fff;
+  &.h-nw, &.h-se { cursor: nwse-resize; }
+  &.h-ne, &.h-sw { cursor: nesw-resize; }
+  &.h-n, &.h-s { cursor: ns-resize; }
+  &.h-e, &.h-w { cursor: ew-resize; }
+}
+
+.slide-guide {
+  position: absolute;
+  background: #e3008c;
+  pointer-events: none;
+  &.v { top: 0; bottom: 0; }
+  &.h { left: 0; right: 0; }
+}
+
+// ---- Toolbar extras ----
+
+.slide-textbox-icon {
+  display: inline-block;
+  padding: 0 0.25rem;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.slide-present-btn { color: $ppt-orange; font-weight: 600; }
+
+// ---- Slide show ----
+
+.slide-show {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  cursor: none;
+  &:hover { cursor: default; }
+  .slide-frame { box-shadow: none; }
+}
+.slide-show-bar {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.85rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+  .slide-show:hover & { opacity: 1; }
+  button {
+    border: 0;
+    background: none;
+    color: #fff;
+    &:disabled { opacity: 0.35; }
+  }
+}
+
+// ---- Printing: one slide per page ----
+
+.slides-print { display: none; }
+
+@media print {
+  body.slides-printing {
+    background: #fff !important;
+    > *:not(.slides-print) { display: none !important; }
+    .slides-print { display: block; }
+  }
+  .slides-print {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .slides-print-page {
+    break-after: page;
+    &:last-child { break-after: auto; }
+  }
+}

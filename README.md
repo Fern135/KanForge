@@ -15,7 +15,7 @@
 
 **Apps**
 - Kanforge is a set of apps behind one sign-in. The home screen shows a tile for each app, and the navbar's app switcher moves between them
-- Apps so far: Boards, Notes and Office (Docs and Sheets). More are planned (presentations, files, mail)
+- Apps so far: Boards, Notes and Office (Docs, Sheets and Slides). More are planned (files, mail)
 - Admins can turn each app on or off for everyone. A turned-off app is hidden and its data is kept
 
 **Workspaces**
@@ -110,6 +110,17 @@
 - Status bar shows the sum, average and count of the selection
 - Up to 50 sheets, 10,000 rows × 200 columns per sheet and 100,000 filled cells per spreadsheet
 
+**Office: Slides**
+- A presentation editor that looks and works like PowerPoint or Impress, with a slide panel, menu bar and toolbar
+- Layouts for new slides (title, title and content, two content, section header, title only, blank), and six themes. Widescreen (16:9) or standard (4:3) slides
+- Text boxes with fonts, sizes, bold/italic/underline, colours, alignment and bullet or numbered lists. Shapes (rectangle, rounded rectangle, oval, triangle, arrow, line) with fill and outline, and text inside. Images (insert, paste or drag in)
+- Move items by dragging, with snapping to the slide and to other items (hold Alt to turn it off), resize them from their handles (Shift keeps the proportions), nudge them with the arrow keys, and bring them forward or send them back. Cut, copy, paste and duplicate, and undo and redo
+- Reorder slides by dragging their thumbnails. Duplicate, delete and change each slide's background
+- Speaker notes under each slide
+- Present full screen from the beginning (F5) or the current slide (Shift+F5). Arrow keys, space or a click move through the slides
+- Save as PowerPoint (.pptx), or print or save as PDF with one slide per page. Saves automatically, and if the same presentation changed elsewhere, you choose which version to keep
+- Up to 300 slides per presentation and 150 items per slide
+
 **Accounts**
 - Email and password sign-up and sign-in. You stay signed in for 14 days without activity
 - Edit your profile name, change your password and "sign out everywhere"
@@ -122,7 +133,7 @@
 **Stack:**
 - Node.js 22 (Express 5), MongoDB 8.2, Redis 7
 - React 19 (Vite, JavaScript), Bootstrap 5, Axios, Font Awesome Free, @hello-pangea/dnd
-- Tiptap (rich-text editing), docx and mammoth (Word export and import), fflate (zip, for Excel files and Notes exports). Heavy parts load only when used
+- Tiptap (rich-text editing), docx and mammoth (Word export and import), pptxgenjs (PowerPoint export), fflate (zip, for Excel files and Notes exports). Heavy parts load only when used
 - nginx, with everything running in Docker
 
 ---
