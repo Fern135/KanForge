@@ -338,10 +338,20 @@ Found a vulnerability? Please report it privately to the maintainer instead of o
 
 ## Contributing
 
-1. Start dev mode with `./run.sh dev`.
-2. Make your change. Schema changes go in a new migration (`make migrate-create name=...`).
-3. Run `./run.sh test` and check that everything passes.
-4. Open a pull request.
+Contributions are welcome. Kanforge uses two branches:
+
+- **`main`** is the stable release. Only the maintainer pushes to it, and changes reach it from `dev` once they've been tested.
+- **`dev`** is where new work lands. Every pull request goes into `dev`, never straight into `main`.
+
+To contribute:
+
+1. Fork the repository and clone your fork.
+2. Create a branch from `dev`: `git checkout dev && git checkout -b my-change`.
+3. Start dev mode with `./run.sh dev` and make your change. Schema changes go in a new migration (`make migrate-create name=...`).
+4. Run `./run.sh test` and check that everything passes. Add tests for new behaviour.
+5. Push your branch to your fork and open a pull request with **`dev`** as the base branch. Describe what changed and why.
+
+Keep each pull request to one change, match the style of the surrounding code, and don't commit `.env` files or other secrets. Found a security issue? Report it privately to the maintainer instead of opening an issue or pull request.
 
 **Adding an app**
 1. Backend: create `backend/src/apps/<id>/index.js` exporting `id`, `name`, `description`, `defaultEnabled`, `bodyLimits` (optional, for request bodies over 32 KB) and `createRouter({ limiters })`, and add it to `apps/index.js`. Its routes are served at `/api/<id>` behind sign-in, workspace membership, the plan and the on/off switch. Give its models the `tenantPlugin` from `core/tenancy.js`, and add the collection to the next migration's workspace backfill. Larger body limits also need a matching `client_max_body_size` in `frontend/nginx/default.conf.template`.
