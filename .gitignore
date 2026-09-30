@@ -8,3 +8,4 @@ docker/nginx/certs/
 *.log
 .DS_Store
 backups/
+features.txt
