@@ -39,6 +39,16 @@ if (!parsed.success) {
 }
 
 const env = parsed.data;
+const appOrigin = new URL(env.APP_ORIGIN).origin;
+
+// In development the dev server answers on localhost and 127.0.0.1 alike, and
+// browsers treat those as different origins. Accept both there, and only there.
+function devAliases(origin) {
+  const url = new URL(origin);
+  if (env.NODE_ENV !== 'development' || url.hostname !== 'localhost') return [];
+  url.hostname = '127.0.0.1';
+  return [url.origin];
+}
 
 module.exports = Object.freeze({
   env: env.NODE_ENV,
@@ -47,7 +57,9 @@ module.exports = Object.freeze({
   port: env.PORT,
   mongoUri: env.MONGO_URI,
   redisUrl: env.REDIS_URL,
-  appOrigin: new URL(env.APP_ORIGIN).origin,
+  appOrigin,
+  // Origins allowed to make state-changing requests.
+  appOrigins: Object.freeze([appOrigin, ...devAliases(appOrigin)]),
   trustProxy: env.TRUST_PROXY,
   logLevel: env.LOG_LEVEL,
   boardCacheTtl: env.BOARD_CACHE_TTL_SECONDS,

@@ -11,7 +11,7 @@ const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);
 function originCheck(req, _res, next) {
   if (SAFE.has(req.method)) return next();
   const origin = req.get('origin');
-  if (origin && origin !== config.appOrigin) {
+  if (origin && !config.appOrigins.includes(origin)) {
     throw AppError.forbidden('Cross-origin request blocked', 'BAD_ORIGIN');
   }
   next();
