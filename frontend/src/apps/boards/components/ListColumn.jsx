@@ -6,7 +6,8 @@ import CardItem from './CardItem';
 import InlineAdd from '../../../core/components/InlineAdd';
 import EditableText from '../../../core/components/EditableText';
 
-function ListColumn({ list, index, cards, labelsById, onOpenCard, onAddCard, onImport, onRename, onDelete }) {
+// readOnly: view-only access, so no editing, adding or dragging.
+function ListColumn({ list, index, cards, labelsById, onOpenCard, onAddCard, onImport, onRename, onDelete, readOnly }) {
   const [menu, setMenu] = useState(false);
   const menuRef = useRef(null);
 
@@ -18,7 +19,7 @@ function ListColumn({ list, index, cards, labelsById, onOpenCard, onAddCard, onI
   }, [menu]);
 
   return (
-    <Draggable draggableId={`list-${list.id}`} index={index}>
+    <Draggable draggableId={`list-${list.id}`} index={index} isDragDisabled={readOnly}>
       {(provided, snapshot) => (
         <section
           ref={provided.innerRef}
@@ -27,27 +28,29 @@ function ListColumn({ list, index, cards, labelsById, onOpenCard, onAddCard, onI
           aria-label={`List: ${list.title}`}
         >
           <header className="list-header" {...provided.dragHandleProps}>
-            <EditableText value={list.title} maxLength={100} className="list-title" ariaLabel="List title" onSave={(t) => onRename(list.id, t)} />
+            <EditableText value={list.title} maxLength={100} className="list-title" ariaLabel="List title" readOnly={readOnly} onSave={(t) => onRename(list.id, t)} />
             <span className="count">{cards.length}</span>
-            <div className="dropdown" ref={menuRef}>
-              <button type="button" className="icon-btn" aria-label="List actions" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
-                <FontAwesomeIcon icon={faEllipsis} />
-              </button>
-              {menu && (
-                <ul className="dropdown-menu dropdown-menu-end show shadow border-0" style={{ right: 0, left: 'auto' }}>
-                  <li>
-                    <button type="button" className="dropdown-item" onClick={() => { setMenu(false); onImport(list); }}>
-                      <FontAwesomeIcon icon={faFileImport} className="me-2" />Import cards
-                    </button>
-                  </li>
-                  <li>
-                    <button type="button" className="dropdown-item text-danger" onClick={() => { setMenu(false); onDelete(list); }}>
-                      <FontAwesomeIcon icon={faTrash} className="me-2" />Delete list
-                    </button>
-                  </li>
-                </ul>
-              )}
-            </div>
+            {!readOnly && (
+              <div className="dropdown" ref={menuRef}>
+                <button type="button" className="icon-btn" aria-label="List actions" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
+                  <FontAwesomeIcon icon={faEllipsis} />
+                </button>
+                {menu && (
+                  <ul className="dropdown-menu dropdown-menu-end show shadow border-0" style={{ right: 0, left: 'auto' }}>
+                    <li>
+                      <button type="button" className="dropdown-item" onClick={() => { setMenu(false); onImport(list); }}>
+                        <FontAwesomeIcon icon={faFileImport} className="me-2" />Import cards
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className="dropdown-item text-danger" onClick={() => { setMenu(false); onDelete(list); }}>
+                        <FontAwesomeIcon icon={faTrash} className="me-2" />Delete list
+                      </button>
+                    </li>
+                  </ul>
+                )}
+              </div>
+            )}
           </header>
           <Droppable droppableId={list.id} type="CARD">
             {(dropProvided, dropSnapshot) => (
@@ -57,22 +60,24 @@ function ListColumn({ list, index, cards, labelsById, onOpenCard, onAddCard, onI
                 className={`list-cards ${dropSnapshot.isDraggingOver ? 'is-over' : ''}`}
               >
                 {cards.map((card, i) => (
-                  <CardItem key={card.id} card={card} index={i} labelsById={labelsById} onOpen={onOpenCard} />
+                  <CardItem key={card.id} card={card} index={i} labelsById={labelsById} onOpen={onOpenCard} readOnly={readOnly} />
                 ))}
                 {dropProvided.placeholder}
               </div>
             )}
           </Droppable>
-          <div className="px-2 pb-2">
-            <InlineAdd
-              label="Add a card"
-              placeholder="Enter a title for this card…"
-              maxLength={200}
-              multiline
-              buttonClass="btn btn-sm w-100 text-start fw-semibold border-0 btn-add-card"
-              onSubmit={(title) => onAddCard(list.id, title)}
-            />
-          </div>
+          {!readOnly && (
+            <div className="px-2 pb-2">
+              <InlineAdd
+                label="Add a card"
+                placeholder="Enter a title for this card…"
+                maxLength={200}
+                multiline
+                buttonClass="btn btn-sm w-100 text-start fw-semibold border-0 btn-add-card"
+                onSubmit={(title) => onAddCard(list.id, title)}
+              />
+            </div>
+          )}
         </section>
       )}
     </Draggable>

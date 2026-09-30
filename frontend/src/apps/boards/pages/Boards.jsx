@@ -7,6 +7,8 @@ import {
 import { boardsApi } from '../api';
 import { errorMessage } from '../../../core/api/client';
 import { useToast } from '../../../core/context/ToastContext';
+import { useWorkspace } from '../../../core/context/WorkspaceContext';
+import ViewOnlyNotice from '../../../core/components/ViewOnlyNotice';
 import Spinner from '../../../core/components/Spinner';
 import Modal from '../../../core/components/Modal';
 import { BACKGROUNDS } from '../utils/constants';
@@ -81,6 +83,8 @@ export default function Boards() {
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
+  // View-only access (set by a platform admin): open boards, create none.
+  const readOnly = !useWorkspace().canEdit('boards');
 
   useEffect(() => {
     boardsApi.list().then((d) => {
@@ -99,11 +103,14 @@ export default function Boards() {
     <main className="container py-4">
       <div className="d-flex align-items-center justify-content-between mb-3">
         <h1 className="h4 fw-bold text-primary mb-0">Your boards</h1>
-        <button type="button" className="btn btn-accent btn-sm d-sm-none" disabled={full} onClick={() => setCreating(true)}>
-          <FontAwesomeIcon icon={faPlus} className="me-1" />New
-        </button>
+        {!readOnly && (
+          <button type="button" className="btn btn-accent btn-sm d-sm-none" disabled={full} onClick={() => setCreating(true)}>
+            <FontAwesomeIcon icon={faPlus} className="me-1" />New
+          </button>
+        )}
       </div>
-      {limit && <BoardLimitNotice used={limit.used} max={limit.max} />}
+      {readOnly && <ViewOnlyNotice className="mb-3" />}
+      {limit && !readOnly && <BoardLimitNotice used={limit.used} max={limit.max} />}
       <div className="row g-3">
         {boards.map((b) => (
           <div className="col-6 col-md-4 col-lg-3" key={b.id}>
@@ -116,15 +123,17 @@ export default function Boards() {
             </Link>
           </div>
         ))}
-        <div className="col-6 col-md-4 col-lg-3">
-          <button type="button" className="board-tile tile-new w-100" disabled={full} onClick={() => setCreating(true)}>
-            <FontAwesomeIcon icon={faPlus} size="lg" className="mb-1" />
-            {full ? 'Board limit reached' : 'Create new board'}
-          </button>
-        </div>
+        {!readOnly && (
+          <div className="col-6 col-md-4 col-lg-3">
+            <button type="button" className="board-tile tile-new w-100" disabled={full} onClick={() => setCreating(true)}>
+              <FontAwesomeIcon icon={faPlus} size="lg" className="mb-1" />
+              {full ? 'Board limit reached' : 'Create new board'}
+            </button>
+          </div>
+        )}
       </div>
       {boards.length === 0 && (
-        <p className="text-muted mt-4">No boards yet. Create your first one to get started.</p>
+        <p className="text-muted mt-4">{readOnly ? 'No boards have been shared with you yet.' : 'No boards yet. Create your first one to get started.'}</p>
       )}
       {creating && (
         <CreateBoardModal onClose={() => setCreating(false)} onCreated={(b) => navigate(`/boards/${b.id}`)} />

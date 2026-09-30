@@ -5,6 +5,8 @@ const { trusted } = require('mongoose');
 const Invite = require('../models/Invite');
 const Workspace = require('../models/Workspace');
 const Membership = require('../models/Membership');
+const User = require('../models/User');
+const cache = require('../services/cache');
 const tokens = require('../services/tokens');
 const workspaces = require('../services/workspaces');
 const { body, ids, z } = require('../middleware/validate');
@@ -122,6 +124,12 @@ function invitesRouter({ limiters }) {
     } catch (err) {
       // Joined through another request at the same moment.
       if (err?.code !== 11000) throw err;
+    }
+    // A link made from the platform admin's People page also sets what the
+    // person can use in each app.
+    if (invite.access && Object.keys(invite.access).length) {
+      await User.updateOne({ _id: req.user.id }, { $set: { access: invite.access } });
+      await cache.invalidateUser(req.user.id);
     }
     audit(req, 'invite.accepted', { invite: String(invite._id), workspace: String(ws._id), role: invite.role });
     res.status(201).json({ workspace: workspaces.summary(ws, invite.role) });

@@ -11,7 +11,9 @@ const { mongoose } = require('./core/db/mongo');
 const { redis } = require('./core/db/redis');
 const { createLimiters } = require('./core/middleware/rateLimit');
 const { originCheck } = require('./core/middleware/csrf');
-const { requireAuth, requireAdmin, requireAppEnabled } = require('./core/middleware/auth');
+const {
+  requireAuth, requireAdmin, requireAppEnabled, requireAppAccess,
+} = require('./core/middleware/auth');
 const { requireWorkspace } = require('./core/middleware/workspace');
 const { notFound, errorHandler } = require('./core/middleware/errorHandler');
 const { createAppState } = require('./core/services/appState');
@@ -91,13 +93,13 @@ function createApp() {
   app.use('/api/auth', authRouter(limiters));
   app.use('/api/workspaces', requireAuth, workspacesRouter({ limiters }));
   app.use('/api/invites', requireAuth, invitesRouter({ limiters }));
-  app.use('/api/admin', requireAuth, requireAdmin, adminRouter({ limiters }));
+  app.use('/api/admin', requireAuth, requireAdmin, adminRouter({ limiters, apps: manifests.map(({ id, name }) => ({ id, name })) }));
 
   // Everything below runs inside the workspace named by the X-Workspace header.
   app.use('/api/workspace', requireAuth, requireWorkspace, currentWorkspaceRouter({ limiters, appState }));
   app.use('/api/apps', requireAuth, requireWorkspace, appsRouter({ appState }));
   for (const m of manifests) {
-    app.use(`/api/${m.id}`, requireAuth, requireWorkspace, requireAppEnabled(appState, m.id), m.createRouter({ limiters }));
+    app.use(`/api/${m.id}`, requireAuth, requireWorkspace, requireAppEnabled(appState, m.id), requireAppAccess(m.id), m.createRouter({ limiters }));
   }
 
   app.use(notFound);

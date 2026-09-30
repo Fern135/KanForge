@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
 // Shows text that turns into an input on click. Saves on Enter or blur.
-export default function EditableText({ value, onSave, maxLength, className, inputClassName = 'form-control form-control-sm', as: Tag = 'span', ariaLabel }) {
+export default function EditableText({
+  value, onSave, maxLength, className, inputClassName = 'form-control form-control-sm', as: Tag = 'span', ariaLabel, readOnly = false,
+}) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const ref = useRef(null);
@@ -25,6 +27,7 @@ export default function EditableText({ value, onSave, maxLength, className, inpu
     }
   };
 
+  if (readOnly) return <Tag className={className}>{value}</Tag>;
   if (editing) {
     return (
       <input

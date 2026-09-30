@@ -54,12 +54,15 @@ export function WorkspaceProvider({ children }) {
       workspace: current?.workspace ?? null,
       isAdmin: current?.workspace.role === 'admin',
       limits: current?.limits ?? {},
-      // Apps this frontend ships, with the workspace's state for each.
-      apps: APPS.filter((a) => byId.get(a.id)?.enabled),
+      // Apps this frontend ships that the workspace has on and this person may use.
+      apps: APPS.filter((a) => byId.get(a.id)?.enabled && byId.get(a.id).access !== 'none'),
       locked: APPS.filter((a) => byId.has(a.id) && !byId.get(a.id).included),
       appStates: current?.apps ?? [],
       isEnabled: (id) => Boolean(byId.get(id)?.enabled),
       isIncluded: (id) => Boolean(byId.get(id)?.included),
+      // 'none' | 'view' | 'edit': what this person may do in the app (set by a platform admin).
+      accessOf: (id) => byId.get(id)?.access ?? 'edit',
+      canEdit: (id) => (byId.get(id)?.access ?? 'edit') === 'edit',
       setCurrent,
       refresh,
     };

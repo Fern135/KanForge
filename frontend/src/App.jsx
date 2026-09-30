@@ -20,6 +20,7 @@ const Admin = lazy(() => import('./core/pages/Admin'));
 const NewWorkspace = lazy(() => import('./core/pages/NewWorkspace'));
 const WorkspaceSettings = lazy(() => import('./core/pages/WorkspaceSettings'));
 const JoinWorkspace = lazy(() => import('./core/pages/JoinWorkspace'));
+const ChoosePassword = lazy(() => import('./core/pages/ChoosePassword'));
 
 // A full page load to a path under /app, outside the current workspace.
 function Leave({ to }) {
@@ -28,7 +29,7 @@ function Leave({ to }) {
 }
 
 function Protected({ children }) {
-  const { status } = useAuth();
+  const { status, user } = useAuth();
   const location = useLocation();
   if (status === 'loading') return <Spinner fullscreen />;
   if (status !== 'authed') {
@@ -36,6 +37,10 @@ function Protected({ children }) {
     const next = `?next=${encodeURIComponent(window.location.pathname + location.search + location.hash)}`;
     if (WORKSPACE_SLUG) return <Leave to={`/login${next}`} />;
     return <Navigate to={`/login${location.pathname === '/' ? '' : next}`} replace />;
+  }
+  // A temporary password from a platform admin is replaced before anything else.
+  if (user?.mustChangePassword) {
+    return <Suspense fallback={<Spinner fullscreen />}><ChoosePassword /></Suspense>;
   }
   return (
     <>
@@ -74,11 +79,21 @@ function WorkspaceGate({ children }) {
   return children;
 }
 
-// Shows an app only while the workspace's plan includes it and it's turned on.
+// Shows an app only while the workspace's plan includes it, it's turned on and
+// this person has access to it.
 function AppGate({ id, children }) {
-  const { isEnabled, isIncluded } = useWorkspace();
-  if (isEnabled(id)) return children;
+  const { isEnabled, isIncluded, accessOf } = useWorkspace();
   const name = APPS.find((a) => a.id === id)?.name ?? 'This app';
+  if (isEnabled(id) && accessOf(id) === 'none') {
+    return (
+      <main className="container py-5 text-center">
+        <h1 className="h5 fw-bold">You don&apos;t have access to {name}</h1>
+        <p className="text-muted">A platform admin decides which apps each person can use.</p>
+        <Link to="/" className="btn btn-primary">Back to home</Link>
+      </main>
+    );
+  }
+  if (isEnabled(id)) return children;
   return (
     <main className="container py-5 text-center">
       {isIncluded(id) ? (

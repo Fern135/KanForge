@@ -18,9 +18,15 @@
 - Apps so far: Boards, Notes and Office (Docs, Sheets and Slides). More are planned (files, mail)
 - Admins can turn each app on or off for everyone. A turned-off app is hidden and its data is kept
 
+**People (self-hosted)**
+- On a self-hosted server, the platform admin page has a People section listing everyone who can sign in
+- Add someone with a temporary password (they choose their own at first sign-in) or with an invite link, straight into a workspace
+- Choose what each person can use in each app: **None** hides it, **View** opens it read-only, **Edit** is full use. Changes apply right away, and platform admins always have full access
+- Reset a password when someone is locked out: they get a new temporary password and are signed out everywhere
+
 **Workspaces**
 - Everything lives in a workspace (a team or company). One account can belong to several, and the navbar's workspace menu switches between them. Each workspace has its own address, `/app/w/<name>/`
-- Workspace admins invite people with invite links (people are never added directly), choose who's an admin, rename the workspace and turn its apps on or off. There's always at least one admin. When someone leaves or is removed, their boards pass to an admin
+- Workspace admins invite people with invite links, choose who's an admin, rename the workspace and turn its apps on or off. There's always at least one admin. When someone leaves or is removed, their boards pass to an admin
 - Boards can only be shared with people in the same workspace, and nothing is visible across workspaces
 - Each workspace has a plan: **Self-hosted** (every app, no limits), **Standard** (Boards and Notes, up to 100 boards per person) or **Plus** (every app, unlimited boards). New workspaces start on `DEFAULT_PLAN`
 - People join a workspace through invite links its admins create under Workspace settings. A link can join people as members or admins, expires after 1 to 30 days and can be limited to a number of uses. Signing up on its own doesn't give access to any workspace. Links can be revoked, and each one is shown only once, when it's created

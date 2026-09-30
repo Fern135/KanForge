@@ -64,6 +64,9 @@ module.exports = Object.freeze({
   logLevel: env.LOG_LEVEL,
   boardCacheTtl: env.BOARD_CACHE_TTL_SECONDS,
   defaultPlan: env.DEFAULT_PLAN,
+  // A self-hosted install (not the hosted service): platform admins manage its
+  // people and what each of them can use.
+  selfHosted: env.DEFAULT_PLAN === 'self-hosted',
   jwt: Object.freeze({
     secret: env.JWT_ACCESS_SECRET,
     ttlSeconds: env.ACCESS_TOKEN_TTL_SECONDS,

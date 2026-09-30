@@ -1,25 +1,34 @@
 'use strict';
 
 const express = require('express');
+const config = require('../config');
 const User = require('../models/User');
 const Workspace = require('../models/Workspace');
 const Membership = require('../models/Membership');
+const Invite = require('../models/Invite');
 const { PAID_PLAN_IDS, planOf } = require('../plans');
+const { ACCESS_LEVELS, restrictionsOf } = require('../access');
 const { trusted } = require('mongoose');
 const cache = require('../services/cache');
+const tokens = require('../services/tokens');
+const { temporaryPassword, hashPassword } = require('../services/passwords');
 const { platformStats } = require('../services/platformStats');
-const { body, ids, z } = require('../middleware/validate');
+const { body, ids, objectId, z } = require('../middleware/validate');
 const { confirmPassword, requireRecentAuth } = require('../middleware/recentAuth');
 const AppError = require('../utils/AppError');
 const { audit } = require('../utils/audit');
 
 // Enough for a self-hosted install. Paging and search come if an instance outgrows it.
 const MAX_WORKSPACES_LISTED = 500;
+const MAX_PEOPLE_LISTED = 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const workspaceSchema = z
   .strictObject({ plan: z.enum(PAID_PLAN_IDS) });
 const addAdminSchema = z.strictObject({ email: z.string().trim().toLowerCase().max(254).pipe(z.email()) });
 const confirmSchema = z.strictObject({ password: z.string().min(1).max(128) });
+const emailSchema = z.string().trim().toLowerCase().max(254).pipe(z.email());
+const nameSchema = z.string().trim().min(1).max(60).regex(/^[^<>]*$/, 'Name contains invalid characters');
 
 // Platform admins are the only accounts listed by name and email. Everyone else
 // only shows up in the totals.
@@ -49,10 +58,62 @@ async function seatCounts(workspaceIds) {
   return new Map(rows.map((r) => [String(r._id), r.seats]));
 }
 
+// Everyone on a self-hosted install, for the People page.
+const person = (u, workspaceNames = []) => ({
+  id: String(u._id),
+  name: u.name,
+  email: u.email,
+  role: u.role || 'user',
+  access: u.access || {},
+  mustChangePassword: Boolean(u.mustChangePassword),
+  workspaces: workspaceNames,
+  createdAt: new Date(u.createdAt).toISOString(),
+  lastActiveAt: u.lastActiveAt ? new Date(u.lastActiveAt).toISOString() : null,
+});
+
+// People is for self-hosted installs, where the platform admin runs the server
+// for their own people. The hosted service keeps who is in each workspace private.
+function selfHostedOnly(_req, _res, next) {
+  if (!config.selfHosted) throw AppError.notFound('Not found');
+  next();
+}
+
 // Platform admin (User.role "admin"): runs the whole server. Mounted behind
-// requireAuth and requireAdmin.
-module.exports = function adminRouter({ limiters }) {
+// requireAuth and requireAdmin. apps: [{ id, name }] of every installed app.
+module.exports = function adminRouter({ limiters, apps }) {
   const router = express.Router();
+  const appIds = apps.map((a) => a.id);
+  const accessSchema = z.partialRecord(z.enum(appIds), z.enum(ACCESS_LEVELS));
+  const workspaceRoleSchema = z.enum(Membership.ROLES).default('member');
+  const addPersonSchema = z.strictObject({
+    name: nameSchema,
+    email: emailSchema,
+    workspaceId: objectId,
+    role: workspaceRoleSchema,
+    access: accessSchema.default({}),
+  });
+  const invitePersonSchema = z.strictObject({
+    workspaceId: objectId,
+    role: workspaceRoleSchema,
+    access: accessSchema.default({}),
+    expiresInDays: z.number().int().min(1).max(30).default(7),
+    maxUses: z.number().int().min(1).max(1000).nullable().default(1),
+  });
+  const updatePersonSchema = z.strictObject({ access: accessSchema });
+
+  async function findWorkspace(id) {
+    const ws = await Workspace.findById(id).select('name slug').lean();
+    if (!ws) throw AppError.notFound('Workspace not found', 'WORKSPACE_NOT_FOUND');
+    return ws;
+  }
+
+  // Someone else's account, not a platform admin (they always have full access).
+  async function findPerson(req) {
+    const user = await User.findById(req.params.userId);
+    if (!user) throw AppError.notFound('Person not found');
+    if (user.role === 'admin') throw AppError.badRequest('Platform admins always have full access', 'ADMIN_FULL_ACCESS');
+    return user;
+  }
 
   // Changes below need the password typed again within the last 10 minutes.
   router.post('/confirm', limiters.sensitive, body(confirmSchema), async (req, res) => {
@@ -78,7 +139,94 @@ module.exports = function adminRouter({ limiters }) {
   });
 
   router.get('/stats', async (_req, res) => {
-    res.json({ stats: await platformStats() });
+    res.json({ stats: await platformStats(), selfHosted: config.selfHosted });
+  });
+
+  // Everyone on the install, the workspaces they're in and what they can use.
+  router.get('/people', selfHostedOnly, async (_req, res) => {
+    const [users, workspaceList] = await Promise.all([
+      User.find().sort({ name: 1 }).limit(MAX_PEOPLE_LISTED)
+        .select('name email role access mustChangePassword createdAt lastActiveAt').lean(),
+      Workspace.find().sort({ name: 1 }).limit(MAX_WORKSPACES_LISTED).select('name slug').lean(),
+    ]);
+    const names = new Map(workspaceList.map((w) => [String(w._id), w.name]));
+    const memberships = await Membership.find({ user: trusted({ $in: users.map((u) => u._id) }) }).select('user workspace').lean();
+    const byUser = new Map();
+    for (const m of memberships) {
+      const wsName = names.get(String(m.workspace));
+      if (wsName) byUser.set(String(m.user), [...(byUser.get(String(m.user)) || []), wsName]);
+    }
+    res.json({
+      people: users.map((u) => person(u, (byUser.get(String(u._id)) || []).sort())),
+      apps,
+      workspaces: workspaceList.map((w) => ({ id: String(w._id), name: w.name, slug: w.slug })),
+    });
+  });
+
+  // Makes an account with a temporary password (shown once, here) and puts it in
+  // a workspace. The person picks their own password at first sign-in.
+  router.post('/people', selfHostedOnly, limiters.sensitive, requireRecentAuth, body(addPersonSchema), async (req, res) => {
+    const ws = await findWorkspace(req.body.workspaceId);
+    const password = temporaryPassword();
+    let user;
+    try {
+      user = await User.create({
+        name: req.body.name,
+        email: req.body.email,
+        passwordHash: await hashPassword(password),
+        access: restrictionsOf(req.body.access),
+        mustChangePassword: true,
+      });
+    } catch (err) {
+      if (err?.code === 11000) throw AppError.conflict('An account with that email already exists', 'EMAIL_TAKEN');
+      throw err;
+    }
+    await Membership.create({ workspace: ws._id, user: user._id, role: req.body.role });
+    audit(req, 'admin.person_added', { target: String(user._id), workspace: String(ws._id), role: req.body.role });
+    res.status(201).json({ person: person(user.toObject({ flattenMaps: true }), [ws.name]), password });
+  });
+
+  // An invite link that joins a workspace and sets app access for whoever uses it.
+  router.post('/people/invite', selfHostedOnly, limiters.sensitive, requireRecentAuth, body(invitePersonSchema), async (req, res) => {
+    const ws = await findWorkspace(req.body.workspaceId);
+    const token = tokens.randomToken(24);
+    const invite = await Invite.create({
+      workspace: ws._id,
+      tokenHash: tokens.sha256(token),
+      role: req.body.role,
+      createdBy: req.user.id,
+      expiresAt: new Date(Date.now() + req.body.expiresInDays * DAY_MS),
+      maxUses: req.body.maxUses,
+      access: restrictionsOf(req.body.access),
+    });
+    audit(req, 'admin.person_invited', { invite: String(invite._id), workspace: String(ws._id), role: invite.role });
+    res.status(201).json({ token, expiresAt: invite.expiresAt.toISOString(), workspace: { name: ws.name, slug: ws.slug } });
+  });
+
+  // What someone can use in each app. Applies to their next request.
+  router.patch('/people/:userId', selfHostedOnly, limiters.sensitive, requireRecentAuth, ids('userId'), body(updatePersonSchema), async (req, res) => {
+    const user = await findPerson(req);
+    const access = restrictionsOf({ ...(user.access ? Object.fromEntries(user.access) : {}), ...req.body.access });
+    await User.updateOne({ _id: user._id }, access ? { $set: { access } } : { $unset: { access: '' } });
+    await cache.invalidateUser(String(user._id));
+    audit(req, 'admin.access_changed', { target: String(user._id), access: access || {} });
+    res.json({ access: access || {} });
+  });
+
+  // A new temporary password for someone who lost theirs. Signs them out everywhere.
+  router.post('/people/:userId/reset-password', selfHostedOnly, limiters.sensitive, requireRecentAuth, ids('userId'), async (req, res) => {
+    if (req.params.userId === req.user.id) throw AppError.badRequest('Change your own password from your account page', 'OWN_ACCOUNT');
+    const user = await User.findById(req.params.userId);
+    if (!user) throw AppError.notFound('Person not found');
+    const password = temporaryPassword();
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { passwordHash: await hashPassword(password), mustChangePassword: true }, $inc: { tokenVersion: 1 }, $unset: { pinDevices: '' } },
+    );
+    await tokens.revokeAllSessions(user._id);
+    await cache.invalidateUser(String(user._id));
+    audit(req, 'admin.password_reset', { target: String(user._id) });
+    res.json({ password });
   });
 
   router.get('/admins', async (_req, res) => {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { officeApi } from './api';
+import { useWorkspace } from '../../core/context/WorkspaceContext';
 
 // Saves this long after the last change.
 const SAVE_DELAY_MS = 1000;
@@ -28,6 +29,9 @@ export default function useDocumentSync(docId, { onError }) {
   const timer = useRef(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  // View-only access: changes stay on screen and are never sent.
+  const viewOnly = useRef(false);
+  viewOnly.current = !useWorkspace().canEdit('office');
 
   const apply = useCallback((d) => {
     versionRef.current = d.version;
@@ -93,6 +97,7 @@ export default function useDocumentSync(docId, { onError }) {
   }, [docId]);
 
   const markDirty = useCallback(() => {
+    if (viewOnly.current) return;
     dirty.current = true;
     if (conflict.current) return;
     setStatus('unsaved');

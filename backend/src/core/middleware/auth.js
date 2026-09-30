@@ -6,11 +6,14 @@ const logger = require('../utils/logger');
 const cache = require('../services/cache');
 const { verifyAccessToken, isAccessTokenRevoked } = require('../services/tokens');
 const AppError = require('../utils/AppError');
+const { accessTo } = require('../access');
+
+const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 async function loadUser(id) {
   const cached = await cache.getUser(id);
   if (cached) return cached;
-  const user = await User.findById(id).select('email name role tokenVersion').lean();
+  const user = await User.findById(id).select('email name role tokenVersion access mustChangePassword').lean();
   if (!user) return null;
   const slim = {
     id: String(user._id),
@@ -18,6 +21,8 @@ async function loadUser(id) {
     name: user.name,
     role: user.role || 'user',
     tokenVersion: user.tokenVersion,
+    access: user.access || null,
+    mustChangePassword: Boolean(user.mustChangePassword),
   };
   await cache.setUser(slim.id, slim);
   return slim;
@@ -46,6 +51,11 @@ async function requireAuth(req, _res, next) {
   if (!user || revoked || user.tokenVersion !== payload.ver) {
     throw AppError.unauthorized('Session revoked', 'TOKEN_INVALID');
   }
+  // A temporary password (set by a platform admin) is replaced before anything
+  // else: only the account routes answer until then.
+  if (user.mustChangePassword && req.baseUrl !== '/api/auth') {
+    throw AppError.forbidden('Choose a new password first', 'PASSWORD_CHANGE_REQUIRED');
+  }
   req.user = user;
   markActive(user.id);
   // The sign-in session this token belongs to (see requireRecentAuth).
@@ -71,4 +81,15 @@ const requireAppEnabled = (appState, id) => (req, _res, next) => {
   next();
 };
 
-module.exports = { requireAuth, requireAdmin, requireAppEnabled, loadUser };
+// Use after requireAppEnabled. What this person may do in the app (see access.js):
+// no access answers 403 NO_ACCESS, and view-only allows reads only.
+const requireAppAccess = (id) => (req, _res, next) => {
+  const level = accessTo(req.user, id);
+  if (level === 'none') throw AppError.forbidden("You don't have access to this app", 'NO_ACCESS');
+  if (level === 'view' && !READS.has(req.method)) {
+    throw AppError.forbidden('You can view this app but not make changes', 'READ_ONLY');
+  }
+  next();
+};
+
+module.exports = { requireAuth, requireAdmin, requireAppEnabled, requireAppAccess, loadUser };

@@ -106,3 +106,44 @@ $admin-muted: #5f6a7a;
   max-height: 420px;
   overflow-y: auto;
 }
+
+// People (self-hosted installs): who they are on the left, app access on the right.
+.admin-person {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.admin-person-who {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.admin-person-access {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+}
+
+.admin-access {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  .btn { padding: 0.15rem 0.5rem; font-size: 0.75rem; }
+}
+
+.admin-access-app {
+  color: $admin-muted;
+  font-size: 0.75rem;
+  min-width: 3.5rem;
+}
+
+.admin-access-list {
+  display: grid;
+  gap: 0.5rem;
+
+  .admin-access-app { min-width: 5rem; font-size: 0.875rem; }
+}

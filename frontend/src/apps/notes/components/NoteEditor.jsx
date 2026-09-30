@@ -45,7 +45,7 @@ function EditorBody({ content, editable, onUpdate, editorRef }) {
 
 const STATUS_TEXT = { saved: 'Saved', unsaved: 'Unsaved changes', saving: 'Saving…', error: 'Not saved', conflict: 'Not saved' };
 
-export default function NoteEditor({ noteId, tree, moved, tagSuggestions, onChanged, onRemoved, onBack }) {
+export default function NoteEditor({ noteId, tree, moved, tagSuggestions, onChanged, onRemoved, onBack, readOnly = false }) {
   const toast = useToast();
   const [note, setNote] = useState(null);
   const [title, setTitle] = useState('');
@@ -233,6 +233,8 @@ export default function NoteEditor({ noteId, tree, moved, tagSuggestions, onChan
 
   if (!note) return <div className="p-5 text-center"><Spinner /></div>;
   const trashed = Boolean(note.trashedAt);
+  // In the trash, or view-only access: nothing here can change.
+  const locked = trashed || readOnly;
   const folderPath = note.folderId && tree.byId.has(note.folderId) ? tree.pathNames(note.folderId) : [];
 
   return (
@@ -242,12 +244,16 @@ export default function NoteEditor({ noteId, tree, moved, tagSuggestions, onChan
           <FontAwesomeIcon icon={faArrowLeft} />
         </button>
         <span className={`small ${status === 'error' || status === 'conflict' ? 'text-danger fw-semibold' : 'text-muted'}`} role="status">
-          {trashed ? 'In the trash' : STATUS_TEXT[status]}
-          {!trashed && status === 'saved' && note.updatedAt && <span className="d-none d-sm-inline"> · edited {timeAgo(note.updatedAt)}</span>}
+          {trashed ? 'In the trash' : readOnly ? 'View only' : STATUS_TEXT[status]}
+          {!locked && status === 'saved' && note.updatedAt && <span className="d-none d-sm-inline"> · edited {timeAgo(note.updatedAt)}</span>}
         </span>
         {status === 'error' && <button type="button" className="btn btn-link btn-sm p-0" onClick={() => save()}>Retry</button>}
         <div className="ms-auto d-flex gap-1">
-          {trashed ? (
+          {readOnly ? (
+            <button type="button" className="icon-btn" onClick={exportNote} aria-label="Download as Markdown" title="Download as Markdown">
+              <FontAwesomeIcon icon={faDownload} />
+            </button>
+          ) : trashed ? (
             <>
               <button type="button" className="btn btn-sm btn-outline-primary" onClick={restore}>
                 <FontAwesomeIcon icon={faRotateLeft} className="me-1" />Restore
@@ -290,18 +296,18 @@ export default function NoteEditor({ noteId, tree, moved, tagSuggestions, onChan
           placeholder="Untitled"
           value={title}
           maxLength={200}
-          readOnly={trashed}
+          readOnly={locked}
           onChange={(e) => onTitle(e.target.value)}
           aria-label="Title"
         />
-        <button type="button" className="note-folder-btn" onClick={() => setMoving(true)} disabled={trashed} title="Move to another folder">
+        <button type="button" className="note-folder-btn" onClick={() => setMoving(true)} disabled={locked} title="Move to another folder">
           <FontAwesomeIcon icon={faFolder} className="me-1" />
           <span className="text-truncate">{folderPath.length ? folderPath.join(' / ') : 'No folder'}</span>
         </button>
         <div className="mb-3">
-          <TagInput tags={note.tags} suggestions={tagSuggestions} disabled={trashed} onChange={(tags) => updateMeta({ tags })} />
+          <TagInput tags={note.tags} suggestions={tagSuggestions} disabled={locked} onChange={(tags) => updateMeta({ tags })} />
         </div>
-        <EditorBody key={bodyKey} content={note.content} editable={!trashed} onUpdate={scheduleSave} editorRef={editorRef} />
+        <EditorBody key={bodyKey} content={note.content} editable={!locked} onUpdate={scheduleSave} editorRef={editorRef} />
       </div>
 
       {moving && (

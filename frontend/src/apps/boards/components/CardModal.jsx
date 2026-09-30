@@ -28,7 +28,8 @@ function Section({ icon, title, children, action }) {
   );
 }
 
-export default function CardModal({ boardId, card, listTitle, labels, role, onChange, onDelete, onClose }) {
+// readOnly: view-only access (set by a platform admin), so the card can be read but not changed.
+export default function CardModal({ boardId, card, listTitle, labels, role, readOnly = false, onChange, onDelete, onClose }) {
   const toast = useToast();
   const { user } = useAuth();
   const [editingDesc, setEditingDesc] = useState(false);
@@ -169,6 +170,7 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
           maxLength={200}
           ariaLabel="Card title"
           inputClassName="form-control fw-bold"
+          readOnly={readOnly}
           onSave={(title) => update({ title })}
         />
       }
@@ -181,7 +183,7 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
           <Section
             icon={faTag}
             title="Labels"
-            action={<button type="button" className="icon-btn small" onClick={() => setPickLabels((p) => !p)}>{pickLabels ? 'Done' : 'Edit'}</button>}
+            action={!readOnly && <button type="button" className="icon-btn small" onClick={() => setPickLabels((p) => !p)}>{pickLabels ? 'Done' : 'Edit'}</button>}
           >
             <div className="d-flex flex-wrap gap-1">
               {(pickLabels ? labels : selected).map((l) => (
@@ -203,28 +205,32 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
         </div>
         <div className="col-12 col-md-6">
           <Section icon={faClock} title="Due date">
-            <div className="d-flex flex-wrap align-items-center gap-2">
-              <input
-                type="datetime-local"
-                className="form-control form-control-sm"
-                style={{ maxWidth: 220 }}
-                value={toLocalInput(card.dueDate)}
-                onChange={(e) => update({ dueDate: fromLocalInput(e.target.value) }).catch(() => {})}
-                aria-label="Due date"
-              />
-              {card.dueDate && (
-                <>
-                  <div className="form-check mb-0">
-                    <input className="form-check-input" type="checkbox" id="due-done" checked={card.dueComplete}
-                      onChange={(e) => update({ dueComplete: e.target.checked }).catch(() => {})} />
-                    <label className="form-check-label small" htmlFor="due-done">Complete</label>
-                  </div>
-                  <button type="button" className="icon-btn" aria-label="Clear due date" onClick={() => update({ dueDate: null, dueComplete: false }).catch(() => {})}>
-                    <FontAwesomeIcon icon={faXmark} />
-                  </button>
-                </>
-              )}
-            </div>
+            {readOnly ? (
+              <div className="small">{card.dueDate ? fullDate(card.dueDate) : <span className="text-muted">No due date</span>}</div>
+            ) : (
+              <div className="d-flex flex-wrap align-items-center gap-2">
+                <input
+                  type="datetime-local"
+                  className="form-control form-control-sm"
+                  style={{ maxWidth: 220 }}
+                  value={toLocalInput(card.dueDate)}
+                  onChange={(e) => update({ dueDate: fromLocalInput(e.target.value) }).catch(() => {})}
+                  aria-label="Due date"
+                />
+                {card.dueDate && (
+                  <>
+                    <div className="form-check mb-0">
+                      <input className="form-check-input" type="checkbox" id="due-done" checked={card.dueComplete}
+                        onChange={(e) => update({ dueComplete: e.target.checked }).catch(() => {})} />
+                      <label className="form-check-label small" htmlFor="due-done">Complete</label>
+                    </div>
+                    <button type="button" className="icon-btn" aria-label="Clear due date" onClick={() => update({ dueDate: null, dueComplete: false }).catch(() => {})}>
+                      <FontAwesomeIcon icon={faXmark} />
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             {status && status !== 'upcoming' && (
               <span className={`badge-due ${status} small d-inline-block mt-2`}>
                 {status === 'overdue' ? 'Overdue' : status === 'soon' ? 'Due soon' : 'Complete'} · {fullDate(card.dueDate)}
@@ -252,6 +258,11 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
               <small className="text-muted ms-auto">{desc.length}/5000</small>
             </div>
           </>
+        ) : readOnly ? (
+          // Rendered as a text node, never as HTML, so it can't carry XSS.
+          <div className="description-view">
+            {card.description || <span className="text-muted">No description</span>}
+          </div>
         ) : (
           // Rendered as a text node, never as HTML, so it can't carry XSS.
           <div className="description-view" role="button" tabIndex={0} onClick={() => setEditingDesc(true)}
@@ -270,25 +281,26 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
               maxLength={100}
               ariaLabel="Checklist title"
               inputClassName="form-control form-control-sm d-inline-block w-auto"
+              readOnly={readOnly}
               onSave={(checklistTitle) => update({ checklistTitle })}
             />
             {card.checklist.length > 0 && ` · ${pct}%`}
           </>
         }
-        action={
-          <div className="d-flex align-items-center gap-3">
-            {done > 0 && (
-              <div className="form-check mb-0 small">
-                <input className="form-check-input" type="checkbox" id="checklist-hide-done" checked={card.checklistHideDone}
-                  onChange={(e) => setChecklistSetting({ checklistHideDone: e.target.checked })} />
-                <label className="form-check-label" htmlFor="checklist-hide-done">Hide when done</label>
-              </div>
-            )}
-            <button type="button" className="icon-btn small" onClick={() => (importing ? closeImport() : setImporting(true))}>
-              {importing ? 'Cancel' : <><FontAwesomeIcon icon={faFileImport} className="me-1" />Import</>}
-            </button>
-          </div>
-        }
+        action={!readOnly && (
+            <div className="d-flex align-items-center gap-3">
+              {done > 0 && (
+                <div className="form-check mb-0 small">
+                  <input className="form-check-input" type="checkbox" id="checklist-hide-done" checked={card.checklistHideDone}
+                    onChange={(e) => setChecklistSetting({ checklistHideDone: e.target.checked })} />
+                  <label className="form-check-label" htmlFor="checklist-hide-done">Hide when done</label>
+                </div>
+              )}
+              <button type="button" className="icon-btn small" onClick={() => (importing ? closeImport() : setImporting(true))}>
+                {importing ? 'Cancel' : <><FontAwesomeIcon icon={faFileImport} className="me-1" />Import</>}
+              </button>
+            </div>
+        )}
       >
         {importing && (
           <div className="mb-3">
@@ -322,35 +334,42 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
         <ul className="list-unstyled mb-2">
           {visibleItems.map((item) => (
             <li key={item.id} className="d-flex align-items-center gap-2 py-1">
-              <input className="form-check-input mt-0" type="checkbox" checked={item.done} onChange={() => toggleItem(item)} aria-label={item.text} />
+              <input className="form-check-input mt-0" type="checkbox" checked={item.done} disabled={readOnly} onChange={() => toggleItem(item)} aria-label={item.text} />
               <span className={`flex-grow-1 text-break ${item.done ? 'text-decoration-line-through text-muted' : ''}`}>{item.text}</span>
-              <button type="button" className="icon-btn" aria-label="Delete item"
-                onClick={() => run(() => cardsApi.removeChecklistItem(boardId, card.id, item.id)).catch(() => {})}>
-                <FontAwesomeIcon icon={faTrash} size="sm" />
-              </button>
+              {!readOnly && (
+                <button type="button" className="icon-btn" aria-label="Delete item"
+                  onClick={() => run(() => cardsApi.removeChecklistItem(boardId, card.id, item.id)).catch(() => {})}>
+                  <FontAwesomeIcon icon={faTrash} size="sm" />
+                </button>
+              )}
             </li>
           ))}
         </ul>
         {card.checklistHideDone && done > 0 && (
           <p className="text-muted small mb-2">{done} completed item{done === 1 ? '' : 's'} hidden</p>
         )}
-        <form onSubmit={addItem} className="d-flex gap-2">
-          <input className="form-control form-control-sm" placeholder="Add an item" maxLength={200} value={newItem} onChange={(e) => setNewItem(e.target.value)} />
-          <button type="submit" className="btn btn-sm btn-primary" disabled={!newItem.trim()} aria-label="Add item">
-            <FontAwesomeIcon icon={faPlus} />
-          </button>
-        </form>
+        {!readOnly && (
+          <form onSubmit={addItem} className="d-flex gap-2">
+            <input className="form-control form-control-sm" placeholder="Add an item" maxLength={200} value={newItem} onChange={(e) => setNewItem(e.target.value)} />
+            <button type="submit" className="btn btn-sm btn-primary" disabled={!newItem.trim()} aria-label="Add item">
+              <FontAwesomeIcon icon={faPlus} />
+            </button>
+          </form>
+        )}
       </Section>
 
       <Section icon={faComments} title="Comments">
-        <form onSubmit={addComment} className="d-flex gap-2 mb-3">
-          <Avatar name={user?.name} small />
-          <div className="flex-grow-1">
-            <textarea className="form-control form-control-sm mb-2" rows={2} maxLength={2000} placeholder="Write a comment…"
-              value={commentText} onChange={(e) => setCommentText(e.target.value)} />
-            {commentText.trim() && <button type="submit" className="btn btn-sm btn-primary">Comment</button>}
-          </div>
-        </form>
+        {!readOnly && (
+          <form onSubmit={addComment} className="d-flex gap-2 mb-3">
+            <Avatar name={user?.name} small />
+            <div className="flex-grow-1">
+              <textarea className="form-control form-control-sm mb-2" rows={2} maxLength={2000} placeholder="Write a comment…"
+                value={commentText} onChange={(e) => setCommentText(e.target.value)} />
+              {commentText.trim() && <button type="submit" className="btn btn-sm btn-primary">Comment</button>}
+            </div>
+          </form>
+        )}
+        {readOnly && comments?.length === 0 && <div className="text-muted small">No comments</div>}
         {comments === null && <div className="text-muted small">Loading comments…</div>}
         {comments?.map((c) => (
           <div key={c.id} className="comment mb-2">
@@ -358,7 +377,7 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
             <div className="flex-grow-1">
               <div className="small mb-1">
                 <strong>{c.author.name}</strong> <span className="text-muted">{timeAgo(c.createdAt)}</span>
-                {(c.author.id === user?.id || role === 'owner') && (
+                {!readOnly && (c.author.id === user?.id || role === 'owner') && (
                   <button type="button" className="btn btn-link btn-sm p-0 ms-2 text-muted" onClick={() => removeComment(c.id)}>Delete</button>
                 )}
               </div>
@@ -368,11 +387,13 @@ export default function CardModal({ boardId, card, listTitle, labels, role, onCh
         ))}
       </Section>
 
-      <div className="border-top pt-3 d-flex justify-content-end">
-        <button type="button" className="btn btn-outline-danger btn-sm" onClick={() => setConfirmDelete(true)}>
-          <FontAwesomeIcon icon={faTrash} className="me-2" />Delete card
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="border-top pt-3 d-flex justify-content-end">
+          <button type="button" className="btn btn-outline-danger btn-sm" onClick={() => setConfirmDelete(true)}>
+            <FontAwesomeIcon icon={faTrash} className="me-2" />Delete card
+          </button>
+        </div>
+      )}
 
       {confirmDelete && (
         <ConfirmModal

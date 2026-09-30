@@ -25,6 +25,8 @@ import { buildTree } from '../../../core/components/folders/tree';
 import Spinner from '../../../core/components/Spinner';
 import { errorMessage } from '../../../core/api/client';
 import { useToast } from '../../../core/context/ToastContext';
+import { useWorkspace } from '../../../core/context/WorkspaceContext';
+import ViewOnlyNotice from '../../../core/components/ViewOnlyNotice';
 import { downloadBlob } from '../../../core/utils/download';
 import './docs.scss';
 
@@ -73,6 +75,9 @@ function DocWorkspace({ sync }) {
 
   const { doc, settings } = sync;
   const trashed = Boolean(doc.trashedAt);
+  // View-only access (set by a platform admin) reads like the trash: nothing changes.
+  const viewOnly = !useWorkspace().canEdit('office');
+  const locked = trashed || viewOnly;
   const box = pageBox(settings);
   const pageW = mmToPx(box.width);
   const pageH = mmToPx(box.height);
@@ -101,7 +106,7 @@ function DocWorkspace({ sync }) {
   const editor = useEditor({
     extensions: [...docExtensions, CharacterCount, Placeholder.configure({ placeholder: 'Type here…' }), FindHighlight],
     content: doc.content,
-    editable: !trashed,
+    editable: !locked,
     onUpdate: () => sync.markDirty(),
     editorProps: {
       attributes: { class: 'doc-body', spellcheck: 'true' },
@@ -265,9 +270,9 @@ function DocWorkspace({ sync }) {
         p: a.print,
         f: () => setFind({ replace: false }),
         h: () => setFind({ replace: true }),
-        k: trashed ? null : a.link,
-        ']': trashed ? null : () => changeFontSize(editorRef.current, 1),
-        '[': trashed ? null : () => changeFontSize(editorRef.current, -1),
+        k: locked ? null : a.link,
+        ']': locked ? null : () => changeFontSize(editorRef.current, 1),
+        '[': locked ? null : () => changeFontSize(editorRef.current, -1),
       };
       if (handlers[k] && !e.shiftKey) {
         e.preventDefault();
@@ -276,7 +281,7 @@ function DocWorkspace({ sync }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [trashed]);
+  }, [locked]);
 
   const onImportDocx = async (e) => {
     const file = e.target.files?.[0];
@@ -308,9 +313,9 @@ function DocWorkspace({ sync }) {
           <div className="min-w-0 flex-grow-1">
             <div className="d-flex align-items-center gap-2">
               <input className="doc-title" value={sync.title} placeholder="Untitled document" maxLength={200}
-                readOnly={trashed} onChange={(e) => sync.setTitle(e.target.value)} aria-label="Document title" />
+                readOnly={locked} onChange={(e) => sync.setTitle(e.target.value)} aria-label="Document title" />
               <span className={`small text-nowrap ${sync.status === 'error' || sync.status === 'conflict' ? 'text-danger fw-semibold' : 'text-muted'}`} role="status">
-                {trashed ? 'In the trash' : STATUS[sync.status]}
+                {trashed ? 'In the trash' : viewOnly ? 'View only' : STATUS[sync.status]}
               </span>
               {sync.status === 'error' && <button type="button" className="btn btn-link btn-sm p-0" onClick={() => sync.save()}>Retry</button>}
               {folderPath && (
@@ -319,10 +324,10 @@ function DocWorkspace({ sync }) {
                 </button>
               )}
             </div>
-            {!trashed && <MenuBar editor={editor} actions={actions} zoom={zoom} showRuler={showRuler} />}
+            {!locked && <MenuBar editor={editor} actions={actions} zoom={zoom} showRuler={showRuler} />}
           </div>
         </div>
-        {!trashed && <Toolbar editor={editor} actions={actions} />}
+        {!locked && <Toolbar editor={editor} actions={actions} />}
         {sync.status === 'conflict' && (
           <div className="alert alert-warning d-flex flex-wrap align-items-center gap-2 m-2 py-2" role="alert">
             <FontAwesomeIcon icon={faCircleExclamation} />
@@ -331,7 +336,8 @@ function DocWorkspace({ sync }) {
             <button type="button" className="btn btn-sm btn-dark" onClick={sync.keepMine}>Keep my version</button>
           </div>
         )}
-        {trashed && (
+        {viewOnly && <ViewOnlyNotice className="m-2" />}
+        {trashed && !viewOnly && (
           <div className="alert alert-secondary d-flex align-items-center gap-2 m-2 py-2" role="alert">
             <span className="me-auto">This document is in the trash, so it can't be edited.</span>
             <button type="button" className="btn btn-sm btn-primary" onClick={restore}><FontAwesomeIcon icon={faRotateLeft} className="me-1" />Restore</button>
@@ -340,10 +346,10 @@ function DocWorkspace({ sync }) {
       </div>
 
       <div className="doc-canvas-wrap">
-      {find && <FindPanel key={String(find.replace)} editor={editor} showReplace={find.replace && !trashed} onClose={() => { setFind(null); editor.commands.focus(); }} />}
+      {find && <FindPanel key={String(find.replace)} editor={editor} showReplace={find.replace && !locked} onClose={() => { setFind(null); editor.commands.focus(); }} />}
       <div className="doc-canvas" ref={canvasRef} onScroll={onScroll}>
         <div className="doc-zoom" style={{ zoom: zoom / 100 }}>
-          {showRuler && !trashed && <Ruler widthMm={box.width} margins={settings.margins} inches={['letter', 'legal'].includes(settings.pageSize)} />}
+          {showRuler && !locked && <Ruler widthMm={box.width} margins={settings.margins} inches={['letter', 'legal'].includes(settings.pageSize)} />}
           <div
             className="doc-paper"
             ref={paperRef}

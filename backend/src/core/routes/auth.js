@@ -9,6 +9,7 @@ const events = require('../services/events');
 const tokens = require('../services/tokens');
 const lockout = require('../services/lockout');
 const { verifyCurrentPassword } = require('../services/currentPassword');
+const { ARGON_OPTS } = require('../services/passwords');
 const cache = require('../services/cache');
 const { requireAuth } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
@@ -16,9 +17,6 @@ const { body, z } = require('../middleware/validate');
 const AppError = require('../utils/AppError');
 const { audit, emailHash } = require('../utils/audit');
 
-// OWASP-recommended Argon2id parameters (19 MiB, t=2, p=1). This is strong and
-// still fast enough to keep login snappy.
-const ARGON_OPTS = { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 };
 // Verified when an email is unknown so response timing doesn't reveal which accounts exist.
 const DUMMY_HASH_PROMISE = argon2.hash('dummy-password-for-timing', ARGON_OPTS);
 
@@ -257,8 +255,8 @@ module.exports = function authRouter(limiters) {
   });
 
   router.get('/me', requireAuth, (req, res) => {
-    const { id, email: mail, name: displayName, role } = req.user;
-    res.json({ user: { id, email: mail, name: displayName, role } });
+    const { id, email: mail, name: displayName, role, mustChangePassword } = req.user;
+    res.json({ user: { id, email: mail, name: displayName, role, ...(mustChangePassword ? { mustChangePassword } : {}) } });
   });
 
   router.patch('/me', limiters.sensitive, requireAuth, body(profileSchema), async (req, res) => {
@@ -272,8 +270,13 @@ module.exports = function authRouter(limiters) {
   router.post('/change-password', limiters.sensitive, requireAuth, body(changePasswordSchema), async (req, res) => {
     const user = await User.findById(req.user.id).select('+passwordHash +pinHash');
     await verifyCurrentPassword(req, user, req.body.currentPassword);
+    if (req.body.newPassword === req.body.currentPassword) {
+      throw AppError.badRequest('Choose a password that is different from the current one', 'SAME_PASSWORD');
+    }
     user.passwordHash = await argon2.hash(req.body.newPassword, ARGON_OPTS);
     user.tokenVersion += 1;
+    // Replacing a temporary password from a platform admin unlocks the account.
+    user.mustChangePassword = undefined;
     await user.save();
     await User.updateOne({ _id: user._id }, { $unset: { pinDevices: '' } });
     await tokens.revokeAllSessions(user._id);

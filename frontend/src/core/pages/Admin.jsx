@@ -8,6 +8,7 @@ import { errorMessage } from '../api/client';
 import Spinner from '../components/Spinner';
 import Modal from '../components/Modal';
 import ConfirmModal from '../components/ConfirmModal';
+import AdminPeople from './AdminPeople';
 import './admin.scss';
 
 // Paid plans only: Self-hosted workspaces are private and never appear here.
@@ -196,12 +197,15 @@ function PlanMix({ plans }) {
   );
 }
 
-// Platform admin: runs the whole server. Sees totals and workspace names and
-// seats, never what's inside a workspace. Only admins are listed by name.
+// Platform admin: runs the whole server. On the hosted service it sees totals and
+// workspace names and seats, never what's inside a workspace, and only admins are
+// listed by name. On a self-hosted install it also manages the server's people
+// and what each of them can use (AdminPeople).
 export default function Admin() {
   const { user, setUser } = useAuth();
   const toast = useToast();
   const [stats, setStats] = useState(null);
+  const [selfHosted, setSelfHosted] = useState(false);
   const [workspaces, setWorkspaces] = useState(null);
   const [admins, setAdmins] = useState(null);
   const [filter, setFilter] = useState('');
@@ -211,7 +215,10 @@ export default function Admin() {
   // A change waiting for the password: retried once it's confirmed.
   const [pending, setPending] = useState(null);
 
-  const loadStats = () => adminApi.stats().then((d) => setStats(d.stats)).catch((err) => toast.error(errorMessage(err)));
+  const loadStats = () => adminApi.stats().then((d) => {
+    setStats(d.stats);
+    setSelfHosted(Boolean(d.selfHosted));
+  }).catch((err) => toast.error(errorMessage(err)));
 
   useEffect(() => {
     loadStats();
@@ -290,19 +297,29 @@ export default function Admin() {
   return (
     <main className="container py-4" style={{ maxWidth: 1040 }}>
       <h1 className="h4 fw-bold text-primary mb-1">Platform admin</h1>
-      <p className="text-muted small mb-4">Totals for the hosted service. Workspace content, who is in each workspace, and Self-hosted workspaces stay private.</p>
+      <p className="text-muted small mb-4">
+        {selfHosted
+          ? 'Your server: who can sign in, what each person can use, and who runs it.'
+          : 'Totals for the hosted service. Workspace content, who is in each workspace, and Self-hosted workspaces stay private.'}
+      </p>
 
       <section className="admin-tiles mb-4" aria-label="Totals">
         <Tile label="Accounts" value={num(stats.accounts)} note={`${num(thisWeek)} new this week`} />
         <Tile label="Active, last 7 days" value={num(stats.active7)} note={`${activeShare}% of accounts · ${num(stats.active30)} in 30 days`} />
-        <Tile label="Workspaces" value={num(stats.workspaces)} />
-        <Tile label="Seats" value={num(stats.seats)} note="One per person per workspace" />
-        <Tile label="Est. monthly revenue" value={money(stats.monthlyRevenue)} note="Seats × plan price" />
-        <Tile label="Est. yearly revenue" value={money(stats.yearlyRevenue)} note="Monthly × 12" />
+        {!selfHosted && (
+          <>
+            <Tile label="Workspaces" value={num(stats.workspaces)} />
+            <Tile label="Seats" value={num(stats.seats)} note="One per person per workspace" />
+            <Tile label="Est. monthly revenue" value={money(stats.monthlyRevenue)} note="Seats × plan price" />
+            <Tile label="Est. yearly revenue" value={money(stats.yearlyRevenue)} note="Monthly × 12" />
+          </>
+        )}
       </section>
 
+      {selfHosted && <AdminPeople currentUserId={user.id} guarded={guarded} />}
+
       <div className="row g-4 mb-4">
-        <div className="col-lg-6">
+        <div className={selfHosted ? 'col-12' : 'col-lg-6'}>
           <section className="card border-0 shadow-sm h-100">
             <div className="card-body">
               <h2 className="h6 fw-bold mb-1"><FontAwesomeIcon icon={faChartColumn} className="me-2 text-success" />Sign-ups per week</h2>
@@ -311,49 +328,56 @@ export default function Admin() {
             </div>
           </section>
         </div>
-        <div className="col-lg-6">
-          <section className="card border-0 shadow-sm h-100">
-            <div className="card-body">
-              <h2 className="h6 fw-bold mb-1"><FontAwesomeIcon icon={faChartColumn} className="me-2 text-success" />Plans</h2>
-              <p className="text-muted small mb-3">Seats and estimated revenue by plan, until real payments are connected.</p>
-              <PlanMix plans={stats.plans} />
-            </div>
-          </section>
-        </div>
+        {!selfHosted && (
+          <div className="col-lg-6">
+            <section className="card border-0 shadow-sm h-100">
+              <div className="card-body">
+                <h2 className="h6 fw-bold mb-1"><FontAwesomeIcon icon={faChartColumn} className="me-2 text-success" />Plans</h2>
+                <p className="text-muted small mb-3">Seats and estimated revenue by plan, until real payments are connected.</p>
+                <PlanMix plans={stats.plans} />
+              </div>
+            </section>
+          </div>
+        )}
       </div>
 
-      <section className="card border-0 shadow-sm mb-4">
-        <div className="card-body">
-          <div className="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2 mb-1">
-            <h2 className="h6 fw-bold mb-0"><FontAwesomeIcon icon={faBuilding} className="me-2 text-success" />Workspaces</h2>
-            <input type="search" className="form-control form-control-sm" style={{ maxWidth: 240 }} placeholder="Find a workspace"
-              aria-label="Find a workspace" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          </div>
-          <p className="text-muted small mb-3">A plan decides a workspace&apos;s apps and limits. Largest first.</p>
-          <ul className="list-group list-group-flush admin-workspaces">
-            {shown.map((w) => (
-              <li className="list-group-item px-0 d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2" key={w.id}>
-                <div className="text-truncate">
-                  <span className="fw-semibold">{w.name}</span>
-                  <div className="text-muted small text-truncate">
-                    /app/w/{w.slug} · {w.seats} {w.seats === 1 ? 'seat' : 'seats'} · since {new Date(w.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+      {!selfHosted && (
+        <section className="card border-0 shadow-sm mb-4">
+          <div className="card-body">
+            <div className="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2 mb-1">
+              <h2 className="h6 fw-bold mb-0"><FontAwesomeIcon icon={faBuilding} className="me-2 text-success" />Workspaces</h2>
+              <input type="search" className="form-control form-control-sm" style={{ maxWidth: 240 }} placeholder="Find a workspace"
+                aria-label="Find a workspace" value={filter} onChange={(e) => setFilter(e.target.value)} />
+            </div>
+            <p className="text-muted small mb-3">A plan decides a workspace&apos;s apps and limits. Largest first.</p>
+            <ul className="list-group list-group-flush admin-workspaces">
+              {shown.map((w) => (
+                <li className="list-group-item px-0 d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2" key={w.id}>
+                  <div className="text-truncate">
+                    <span className="fw-semibold">{w.name}</span>
+                    <div className="text-muted small text-truncate">
+                      /app/w/{w.slug} · {w.seats} {w.seats === 1 ? 'seat' : 'seats'} · since {new Date(w.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                    </div>
                   </div>
-                </div>
-                <select className="form-select form-select-sm flex-shrink-0" style={{ width: 'auto' }} value={w.plan} disabled={busy === `ws:${w.id}`}
-                  aria-label={`Plan for ${w.name}`} onChange={(e) => setPlan(w, e.target.value)}>
-                  {PLANS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-                </select>
-              </li>
-            ))}
-            {!shown.length && <li className="list-group-item px-0 text-muted small">No workspace matches.</li>}
-          </ul>
-        </div>
-      </section>
+                  <select className="form-select form-select-sm flex-shrink-0" style={{ width: 'auto' }} value={w.plan} disabled={busy === `ws:${w.id}`}
+                    aria-label={`Plan for ${w.name}`} onChange={(e) => setPlan(w, e.target.value)}>
+                    {PLANS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                  </select>
+                </li>
+              ))}
+              {!shown.length && <li className="list-group-item px-0 text-muted small">No workspace matches.</li>}
+            </ul>
+          </div>
+        </section>
+      )}
 
       <section className="card border-0 shadow-sm">
         <div className="card-body">
           <h2 className="h6 fw-bold mb-1"><FontAwesomeIcon icon={faUserShield} className="me-2 text-success" />Platform admins</h2>
-          <p className="text-muted small mb-3">They manage plans and other platform admins. There&apos;s always at least one.</p>
+          <p className="text-muted small mb-3">
+            {selfHosted ? 'They manage people, what each person can use, and other platform admins.' : 'They manage plans and other platform admins.'}
+            {' '}There&apos;s always at least one, and they always have full access to every app.
+          </p>
           <form className="d-flex flex-column flex-sm-row gap-2 mb-3" onSubmit={addAdmin}>
             <label className="visually-hidden" htmlFor="admin-email">Email</label>
             <input id="admin-email" type="email" className="form-control" maxLength={254} placeholder="Email of an existing account"

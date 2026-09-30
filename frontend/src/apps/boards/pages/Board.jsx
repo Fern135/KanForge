@@ -6,6 +6,8 @@ import { faUserPlus, faTags, faGear } from '@fortawesome/free-solid-svg-icons';
 import { boardsApi, cardsApi, listsApi } from '../api';
 import { errorMessage } from '../../../core/api/client';
 import { useToast } from '../../../core/context/ToastContext';
+import { useWorkspace } from '../../../core/context/WorkspaceContext';
+import ViewOnlyNotice from '../../../core/components/ViewOnlyNotice';
 import Spinner from '../../../core/components/Spinner';
 import Avatar from '../../../core/components/Avatar';
 import EditableText from '../../../core/components/EditableText';
@@ -41,6 +43,8 @@ export default function Board() {
   const { boardId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  // View-only access (set by a platform admin): look, but no changes.
+  const readOnly = !useWorkspace().canEdit('boards');
   const [state, setState] = useState(null);
   const [openCardId, setOpenCardId] = useState(null);
   const [modal, setModal] = useState(null);
@@ -228,21 +232,26 @@ export default function Board() {
     <div className={`board-page bg-board-${meta.background}`}>
       <div className="board-header">
         <EditableText as="h1" value={meta.title} maxLength={100} className="board-title" ariaLabel="Board title"
-          inputClassName="form-control form-control-sm fw-bold" onSave={renameBoard} />
+          inputClassName="form-control form-control-sm fw-bold" readOnly={readOnly} onSave={renameBoard} />
+        {readOnly && <ViewOnlyNotice className="ms-2" />}
         <div className="ms-auto d-flex align-items-center gap-2">
           <div className="d-none d-sm-flex ps-2">
             {meta.members.slice(0, 5).map((m) => <Avatar key={m.id} name={m.name} small stacked />)}
             {meta.members.length > 5 && <span className="avatar avatar-sm stacked">+{meta.members.length - 5}</span>}
           </div>
-          <button type="button" className="btn btn-sm btn-glass" onClick={() => setModal('members')}>
-            <FontAwesomeIcon icon={faUserPlus} /><span className="d-none d-md-inline ms-2">Share</span>
-          </button>
-          <button type="button" className="btn btn-sm btn-glass" onClick={() => setModal('labels')} aria-label="Labels">
-            <FontAwesomeIcon icon={faTags} />
-          </button>
-          <button type="button" className="btn btn-sm btn-glass" onClick={() => setModal('settings')} aria-label="Board settings">
-            <FontAwesomeIcon icon={faGear} />
-          </button>
+          {!readOnly && (
+            <>
+              <button type="button" className="btn btn-sm btn-glass" onClick={() => setModal('members')}>
+                <FontAwesomeIcon icon={faUserPlus} /><span className="d-none d-md-inline ms-2">Share</span>
+              </button>
+              <button type="button" className="btn btn-sm btn-glass" onClick={() => setModal('labels')} aria-label="Labels">
+                <FontAwesomeIcon icon={faTags} />
+              </button>
+              <button type="button" className="btn btn-sm btn-glass" onClick={() => setModal('settings')} aria-label="Board settings">
+                <FontAwesomeIcon icon={faGear} />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -262,18 +271,21 @@ export default function Board() {
                   onImport={setImportList}
                   onRename={renameList}
                   onDelete={setDeleteList}
+                  readOnly={readOnly}
                 />
               ))}
               {provided.placeholder}
-              <div className="add-list">
-                <InlineAdd
-                  label={state.listOrder.length ? 'Add another list' : 'Add a list'}
-                  placeholder="List title…"
-                  maxLength={100}
-                  buttonClass="btn-add-list"
-                  onSubmit={addList}
-                />
-              </div>
+              {!readOnly && (
+                <div className="add-list">
+                  <InlineAdd
+                    label={state.listOrder.length ? 'Add another list' : 'Add a list'}
+                    placeholder="List title…"
+                    maxLength={100}
+                    buttonClass="btn-add-list"
+                    onSubmit={addList}
+                  />
+                </div>
+              )}
             </div>
           )}
         </Droppable>
@@ -286,6 +298,7 @@ export default function Board() {
           listTitle={state.listsById[openCard.listId]?.title}
           labels={meta.labels}
           role={meta.role}
+          readOnly={readOnly}
           onChange={updateCard}
           onDelete={removeCard}
           onClose={() => setOpenCardId(null)}

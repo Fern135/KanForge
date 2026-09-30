@@ -5,13 +5,13 @@ import { faAlignLeft, faSquareCheck, faClock } from '@fortawesome/free-solid-svg
 import { faComment } from '@fortawesome/free-regular-svg-icons';
 import { dueStatus, shortDate } from '../../../core/utils/dates';
 
-function CardItem({ card, index, labelsById, onOpen }) {
+function CardItem({ card, index, labelsById, onOpen, readOnly }) {
   const status = dueStatus(card);
   const doneCount = card.checklist.filter((i) => i.done).length;
   const labels = card.labels.map((id) => labelsById[id]).filter(Boolean);
 
   return (
-    <Draggable draggableId={card.id} index={index}>
+    <Draggable draggableId={card.id} index={index} isDragDisabled={readOnly}>
       {(provided, snapshot) => (
         <div
           ref={provided.innerRef}

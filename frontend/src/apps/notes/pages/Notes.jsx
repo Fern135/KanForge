@@ -19,6 +19,8 @@ import Spinner from '../../../core/components/Spinner';
 import useDropdown from '../../../core/hooks/useDropdown';
 import { errorMessage } from '../../../core/api/client';
 import { useToast } from '../../../core/context/ToastContext';
+import { useWorkspace } from '../../../core/context/WorkspaceContext';
+import ViewOnlyNotice from '../../../core/components/ViewOnlyNotice';
 import { timeAgo } from '../../../core/utils/dates';
 
 const VIEWS = [
@@ -79,6 +81,8 @@ export default function Notes() {
   const toast = useToast();
   const menu = useDropdown();
   const { expanded, toggle, open } = useExpanded();
+  // View-only access (set by a platform admin): read and export, nothing else.
+  const readOnly = !useWorkspace().canEdit('notes');
   const [view, setView] = useState('active');
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState('');
@@ -301,9 +305,11 @@ export default function Notes() {
         <div className="p-3 pb-2 border-bottom">
           <div className="d-flex align-items-center gap-2 mb-2">
             <h1 className="h5 fw-bold text-primary mb-0 me-auto">Notes</h1>
-            <button type="button" className="btn btn-sm btn-accent" onClick={createNote}>
-              <FontAwesomeIcon icon={faPlus} className="me-1" />New
-            </button>
+            {!readOnly && (
+              <button type="button" className="btn btn-sm btn-accent" onClick={createNote}>
+                <FontAwesomeIcon icon={faPlus} className="me-1" />New
+              </button>
+            )}
             <div className="dropdown" ref={menu.ref}>
               <button type="button" className="icon-btn" aria-label="More" aria-haspopup="menu" aria-expanded={menu.open}
                 onClick={() => menu.setOpen((o) => !o)}>
@@ -311,17 +317,19 @@ export default function Notes() {
               </button>
               {menu.open && (
                 <ul className="dropdown-menu dropdown-menu-end show shadow border-0" style={{ right: 0, left: 'auto' }} role="menu">
-                  <li>
-                    <button type="button" className="dropdown-item" onClick={() => openModal({ type: 'import' })}>
-                      <FontAwesomeIcon icon={faFileImport} className="me-2" fixedWidth />Import Markdown
-                    </button>
-                  </li>
+                  {!readOnly && (
+                    <li>
+                      <button type="button" className="dropdown-item" onClick={() => openModal({ type: 'import' })}>
+                        <FontAwesomeIcon icon={faFileImport} className="me-2" fixedWidth />Import Markdown
+                      </button>
+                    </li>
+                  )}
                   <li>
                     <button type="button" className="dropdown-item" onClick={exportAll}>
                       <FontAwesomeIcon icon={faFileExport} className="me-2" fixedWidth />Export all (.zip)
                     </button>
                   </li>
-                  {view === 'trash' && (
+                  {view === 'trash' && !readOnly && (
                     <li>
                       <button type="button" className="dropdown-item text-danger" onClick={() => openModal({ type: 'emptyTrash' })}>
                         <FontAwesomeIcon icon={faTrashCan} className="me-2" fixedWidth />Empty trash
@@ -332,6 +340,7 @@ export default function Notes() {
               )}
             </div>
           </div>
+          {readOnly && <ViewOnlyNotice className="mb-2" />}
           <div className="input-group input-group-sm mb-2">
             <span className="input-group-text"><FontAwesomeIcon icon={faMagnifyingGlass} /></span>
             <input type="search" className="form-control" placeholder="Search notes" value={query} maxLength={100}
@@ -359,10 +368,12 @@ export default function Notes() {
           <div className="folders-section border-bottom">
             <div className="d-flex align-items-center px-3 pt-2">
               <span className="small fw-bold text-uppercase text-muted me-auto">Folders</span>
-              <button type="button" className="icon-btn" onClick={() => setEditing({ mode: 'create', parentId: null })}
-                aria-label="New folder" title="New folder">
-                <FontAwesomeIcon icon={faFolderPlus} />
-              </button>
+              {!readOnly && (
+                <button type="button" className="icon-btn" onClick={() => setEditing({ mode: 'create', parentId: null })}
+                  aria-label="New folder" title="New folder">
+                  <FontAwesomeIcon icon={faFolderPlus} />
+                </button>
+              )}
             </div>
             <FolderTree
               tree={tree}
@@ -372,6 +383,7 @@ export default function Notes() {
               selected={selected}
               expanded={expanded}
               editing={editing}
+              readOnly={readOnly}
               onSelect={selectFolder}
               onToggle={toggle}
               onCreate={(parentId) => {
@@ -415,7 +427,7 @@ export default function Notes() {
                   key={n.id}
                   to={`/notes/${n.id}`}
                   className={`note-item ${n.id === noteId ? 'active' : ''}`}
-                  draggable={!n.trashedAt}
+                  draggable={!n.trashedAt && !readOnly}
                   onDragStart={(e) => {
                     e.dataTransfer.setData(DRAG_ITEM, n.id);
                     e.dataTransfer.effectAllowed = 'move';
@@ -455,14 +467,17 @@ export default function Notes() {
             onChanged={onChanged}
             onRemoved={onRemoved}
             onBack={closeEditor}
+            readOnly={readOnly}
           />
         ) : (
           <div className="m-auto text-center text-muted p-4">
             <FontAwesomeIcon icon={faNoteSticky} size="2x" className="mb-3 opacity-50" />
-            <p className="mb-3">Pick a note, or start a new one.</p>
-            <button type="button" className="btn btn-primary" onClick={createNote}>
-              <FontAwesomeIcon icon={faPlus} className="me-2" />New note
-            </button>
+            <p className="mb-3">{readOnly ? 'Pick a note to read it.' : 'Pick a note, or start a new one.'}</p>
+            {!readOnly && (
+              <button type="button" className="btn btn-primary" onClick={createNote}>
+                <FontAwesomeIcon icon={faPlus} className="me-2" />New note
+              </button>
+            )}
           </div>
         )}
       </section>

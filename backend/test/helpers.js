@@ -20,6 +20,7 @@ const migrations = [
   require('../migrations/20261002000001-invites'),
   require('../migrations/20261003000001-search-text'),
   require('../migrations/20261004000001-platform-stats'),
+  require('../migrations/20261005000001-people-access'),
 ];
 
 if (!config.isTest || !new URL(config.mongoUri).pathname.endsWith('_test')) {

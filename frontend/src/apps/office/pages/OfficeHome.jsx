@@ -17,6 +17,8 @@ import Spinner from '../../../core/components/Spinner';
 import useDropdown from '../../../core/hooks/useDropdown';
 import { errorMessage } from '../../../core/api/client';
 import { useToast } from '../../../core/context/ToastContext';
+import { useWorkspace } from '../../../core/context/WorkspaceContext';
+import ViewOnlyNotice from '../../../core/components/ViewOnlyNotice';
 import { timeAgo } from '../../../core/utils/dates';
 import '../office.scss';
 
@@ -94,6 +96,8 @@ function RowMenu({ items }) {
 export default function OfficeHome() {
   const navigate = useNavigate();
   const toast = useToast();
+  // View-only access (set by a platform admin): open and download, nothing else.
+  const readOnly = !useWorkspace().canEdit('office');
   const newMenu = useDropdown();
   const docxInput = useRef(null);
   const [view, setView] = useState('active');
@@ -375,24 +379,27 @@ export default function OfficeHome() {
         <div className="p-3 pb-2">
           <div className="d-flex align-items-center gap-2 mb-2">
             <h1 className="h5 fw-bold text-primary mb-0 me-auto">Office</h1>
-            <div className="dropdown" ref={newMenu.ref}>
-              <button type="button" className="btn btn-sm btn-accent" aria-haspopup="menu" aria-expanded={newMenu.open} onClick={() => newMenu.setOpen((o) => !o)}>
-                <FontAwesomeIcon icon={faPlus} className="me-1" />New
-              </button>
-              {newMenu.open && (
-                <ul className="dropdown-menu dropdown-menu-end show shadow border-0" style={{ right: 0, left: 'auto' }} role="menu">
-                  {Object.entries(KIND).map(([kind, k]) => (
-                    <li key={kind}>
-                      <button type="button" className="dropdown-item d-flex align-items-center" disabled={!k.ready} onClick={() => create(kind)}>
-                        <FontAwesomeIcon icon={k.icon} className="me-2" style={{ color: k.color }} fixedWidth />{k.label}
-                        {!k.ready && <span className="badge text-bg-light ms-auto ps-2">Coming soon</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            {!readOnly && (
+              <div className="dropdown" ref={newMenu.ref}>
+                <button type="button" className="btn btn-sm btn-accent" aria-haspopup="menu" aria-expanded={newMenu.open} onClick={() => newMenu.setOpen((o) => !o)}>
+                  <FontAwesomeIcon icon={faPlus} className="me-1" />New
+                </button>
+                {newMenu.open && (
+                  <ul className="dropdown-menu dropdown-menu-end show shadow border-0" style={{ right: 0, left: 'auto' }} role="menu">
+                    {Object.entries(KIND).map(([kind, k]) => (
+                      <li key={kind}>
+                        <button type="button" className="dropdown-item d-flex align-items-center" disabled={!k.ready} onClick={() => create(kind)}>
+                          <FontAwesomeIcon icon={k.icon} className="me-2" style={{ color: k.color }} fixedWidth />{k.label}
+                          {!k.ready && <span className="badge text-bg-light ms-auto ps-2">Coming soon</span>}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
+          {readOnly && <ViewOnlyNotice className="mb-2" />}
           <div className="input-group input-group-sm mb-2">
             <span className="input-group-text"><FontAwesomeIcon icon={faMagnifyingGlass} /></span>
             <input type="search" className="form-control" placeholder="Search documents" value={query} maxLength={100}
@@ -410,9 +417,11 @@ export default function OfficeHome() {
           <div className="folders-section border-top">
             <div className="d-flex align-items-center px-3 pt-2">
               <span className="small fw-bold text-uppercase text-muted me-auto">Folders</span>
-              <button type="button" className="icon-btn" onClick={() => setEditing({ mode: 'create', parentId: null })} aria-label="New folder" title="New folder">
-                <FontAwesomeIcon icon={faFolderPlus} />
-              </button>
+              {!readOnly && (
+                <button type="button" className="icon-btn" onClick={() => setEditing({ mode: 'create', parentId: null })} aria-label="New folder" title="New folder">
+                  <FontAwesomeIcon icon={faFolderPlus} />
+                </button>
+              )}
             </div>
             <FolderTree
               tree={tree}
@@ -422,6 +431,7 @@ export default function OfficeHome() {
               selected={selected}
               expanded={expanded}
               editing={editing}
+              readOnly={readOnly}
               onSelect={setSelected}
               onToggle={toggle}
               onCreate={(parentId) => { open(parentId); setEditing({ mode: 'create', parentId }); }}
@@ -449,7 +459,7 @@ export default function OfficeHome() {
               <label className="form-check-label" htmlFor="office-deep">Include subfolders</label>
             </div>
           )}
-          {view === 'trash' ? (
+          {readOnly ? null : view === 'trash' ? (
             docs?.length > 0 && <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => setModal({ type: 'emptyTrash' })}>Empty trash</button>
           ) : (
             <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => docxInput.current?.click()} disabled={importing}>
@@ -465,7 +475,12 @@ export default function OfficeHome() {
               <FontAwesomeIcon icon={faXmark} />
             </button>
             <span className="fw-semibold me-auto" aria-live="polite">{busy || `${pickedDocs.length} selected`}</span>
-            {view === 'trash' ? (
+            {readOnly ? (
+              <button type="button" className="btn btn-sm btn-light" disabled={Boolean(busy) || view === 'trash'} onClick={downloadPicked}
+                title={pickedDocs.length > 1 ? 'Download as a .zip of Word and Excel files' : 'Download as a Word or Excel file'}>
+                <FontAwesomeIcon icon={faDownload} className="me-1" />Download
+              </button>
+            ) : view === 'trash' ? (
               <>
                 <button type="button" className="btn btn-sm btn-light" disabled={Boolean(busy)}
                   onClick={() => bulk('Restoring', (d) => officeApi.restore(d.id), (n) => `${plural(n, 'document')} restored`)}>
@@ -501,7 +516,7 @@ export default function OfficeHome() {
           <div className="p-5 text-center"><Spinner /></div>
         ) : docs.length === 0 ? (
           <div className="text-center text-muted p-5">
-            {q ? 'No documents match.' : view === 'trash' ? 'The trash is empty.' : (
+            {q ? 'No documents match.' : view === 'trash' ? 'The trash is empty.' : readOnly ? 'No documents here yet.' : (
               <>
                 <FontAwesomeIcon icon={faFileWord} size="3x" className="mb-3" style={{ color: '#2b579a', opacity: 0.35 }} />
                 <p className="mb-3">No documents here yet. Start a blank one:</p>
@@ -533,7 +548,10 @@ export default function OfficeHome() {
               const k = KIND[d.kind];
               const trashed = Boolean(d.trashedAt);
               const where = d.folderId && tree.byId.has(d.folderId) ? tree.pathNames(d.folderId).join(' / ') : '—';
-              const items = trashed
+              const download = canExport(d.kind) ? [{ label: `Download (.${{ sheet: 'xlsx', slides: 'pptx' }[d.kind] ?? 'docx'})`, icon: faDownload, onClick: () => downloadDoc(d) }] : [];
+              const items = readOnly
+                ? (trashed ? [] : [{ label: 'Open', icon: faFolderOpen, onClick: () => navigate(`/office/${k.path}/${d.id}`) }, ...download])
+                : trashed
                 ? [
                   { label: 'Restore', icon: faRotateLeft, onClick: () => restoreDoc(d).catch(() => {}) },
                   { label: 'Delete forever', icon: faTrashCan, danger: true, onClick: () => setModal({ type: 'deleteDoc', doc: d }) },
@@ -542,12 +560,12 @@ export default function OfficeHome() {
                   { label: 'Open', icon: faFolderOpen, onClick: () => navigate(`/office/${k.path}/${d.id}`) },
                   { label: 'Rename', icon: faPen, onClick: () => setModal({ type: 'rename', doc: d }) },
                   { label: 'Make a copy', icon: faCopy, onClick: () => copyDoc(d).catch(() => {}) },
-                  ...(canExport(d.kind) ? [{ label: `Download (.${{ sheet: 'xlsx', slides: 'pptx' }[d.kind] ?? 'docx'})`, icon: faDownload, onClick: () => downloadDoc(d) }] : []),
+                  ...download,
                   { label: 'Move to…', icon: faArrowRightToBracket, onClick: () => setModal({ type: 'moveDoc', doc: d }) },
                   { label: 'Move to trash', icon: faTrashCan, danger: true, onClick: () => trashDoc(d).catch(() => {}) },
                 ];
               return (
-                <div key={d.id} className={`office-row${picked.has(d.id) ? ' picked' : ''}`} role="row" draggable={!trashed}
+                <div key={d.id} className={`office-row${picked.has(d.id) ? ' picked' : ''}`} role="row" draggable={!trashed && !readOnly}
                   onDragStart={(e) => { e.dataTransfer.setData(DRAG_ITEM, d.id); e.dataTransfer.effectAllowed = 'move'; }}>
                   <span role="cell" className="d-flex align-items-center gap-2 min-w-0">
                     <input type="checkbox" className="form-check-input m-0 office-check" checked={picked.has(d.id)} disabled={Boolean(busy)}
@@ -566,7 +584,7 @@ export default function OfficeHome() {
                   )}
                   <span role="cell" className="d-none d-sm-block text-muted small">{timeAgo(d.trashedAt || d.updatedAt)}</span>
                   <span role="cell" className="d-none d-md-block text-muted small text-end">{sizeLabel(d.size)}</span>
-                  <span role="cell" className="text-end"><RowMenu items={items} /></span>
+                  <span role="cell" className="text-end">{items.length > 0 && <RowMenu items={items} />}</span>
                 </div>
               );
             })}

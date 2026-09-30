@@ -67,7 +67,7 @@ function currentWorkspaceRouter({ limiters, appState }) {
     const plan = planOf(req.workspace.plan);
     res.json({
       workspace: { ...workspaces.summary({ _id: ws(req), ...req.workspace }, req.workspaceRole) },
-      apps: appState.list(req.workspace).map(({ id, name: appName, included, enabled }) => ({ id, name: appName, included, enabled })),
+      apps: appState.list(req.workspace, req.user).map(({ id, name: appName, included, enabled, access }) => ({ id, name: appName, included, enabled, access })),
       limits: { maxBoardsPerUser: plan.maxBoardsPerUser },
     });
   });
@@ -152,7 +152,7 @@ function currentWorkspaceRouter({ limiters, appState }) {
       throw AppError.forbidden(`${app.name} isn't included in this workspace's plan`, 'PLAN_REQUIRED');
     }
     await appState.setEnabled(req.workspace, app.id, req.body.enabled);
-    res.json({ apps: appState.list(req.workspace).map(({ id, name: appName, included, enabled }) => ({ id, name: appName, included, enabled })) });
+    res.json({ apps: appState.list(req.workspace, req.user).map(({ id, name: appName, included, enabled, access }) => ({ id, name: appName, included, enabled, access })) });
   });
 
   return router;

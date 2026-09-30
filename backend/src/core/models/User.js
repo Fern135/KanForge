@@ -1,6 +1,7 @@
 'use strict';
 
 const { Schema, model } = require('mongoose');
+const { ACCESS_LEVELS } = require('../access');
 
 const userSchema = new Schema(
   {
@@ -18,6 +19,12 @@ const userSchema = new Schema(
       default: undefined,
       select: false,
     },
+    // What this person can do in each app, when a platform admin has limited it
+    // (see access.js). Unset means full use of every app.
+    access: { type: Map, of: { type: String, enum: ACCESS_LEVELS }, default: undefined },
+    // Set when a platform admin made the account or reset its password: the
+    // temporary password must be replaced before anything else.
+    mustChangePassword: { type: Boolean },
     // When the account last used the app (updated at most once an hour), for the
     // platform stats.
     lastActiveAt: { type: Date },
@@ -29,7 +36,13 @@ const userSchema = new Schema(
 
 userSchema.set('toJSON', {
   transform(_doc, ret) {
-    return { id: String(ret._id), email: ret.email, name: ret.name, role: ret.role || 'user' };
+    return {
+      id: String(ret._id),
+      email: ret.email,
+      name: ret.name,
+      role: ret.role || 'user',
+      ...(ret.mustChangePassword ? { mustChangePassword: true } : {}),
+    };
   },
 });
 

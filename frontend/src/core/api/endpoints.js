@@ -54,4 +54,10 @@ export const adminApi = {
   admins: () => data(api.get('/admin/admins')),
   addAdmin: (email) => data(api.post('/admin/admins', { email })),
   removeAdmin: (id) => api.delete(`/admin/admins/${encodeURIComponent(id)}`),
+  // Self-hosted installs only.
+  people: () => data(api.get('/admin/people')),
+  addPerson: (body) => data(api.post('/admin/people', body)),
+  invitePerson: (body) => data(api.post('/admin/people/invite', body)),
+  setAccess: (id, access) => data(api.patch(`/admin/people/${encodeURIComponent(id)}`, { access })),
+  resetPassword: (id) => data(api.post(`/admin/people/${encodeURIComponent(id)}/reset-password`)),
 };

@@ -26,6 +26,8 @@ import { buildTree } from '../../../core/components/folders/tree';
 import Spinner from '../../../core/components/Spinner';
 import { errorMessage } from '../../../core/api/client';
 import { useToast } from '../../../core/context/ToastContext';
+import { useWorkspace } from '../../../core/context/WorkspaceContext';
+import ViewOnlyNotice from '../../../core/components/ViewOnlyNotice';
 import { downloadBlob } from '../../../core/utils/download';
 import '../docs/docs.scss';
 import './slides.scss';
@@ -346,7 +348,10 @@ function SlideWorkspace({ sync }) {
   const navigate = useNavigate();
   const toast = useToast();
   const { doc } = sync;
-  const readOnly = Boolean(doc.trashedAt);
+  const trashed = Boolean(doc.trashedAt);
+  // View-only access (set by a platform admin) reads like the trash: nothing changes.
+  const viewOnly = !useWorkspace().canEdit('office');
+  const readOnly = trashed || viewOnly;
 
   const [deck, setDeckState] = useState(() => fromContent(doc.content));
   const deckRef = useRef(deck);
@@ -1278,7 +1283,7 @@ function SlideWorkspace({ sync }) {
               <input className="doc-title" value={sync.title} placeholder="Untitled presentation" maxLength={200}
                 readOnly={readOnly} onChange={(e) => sync.setTitle(e.target.value)} aria-label="Presentation title" />
               <span className={`small text-nowrap ${sync.status === 'error' || sync.status === 'conflict' ? 'text-danger fw-semibold' : 'text-muted'}`} role="status">
-                {readOnly ? 'In the trash' : STATUS[sync.status]}
+                {trashed ? 'In the trash' : viewOnly ? 'View only' : STATUS[sync.status]}
               </span>
               {sync.status === 'error' && <button type="button" className="btn btn-link btn-sm p-0" onClick={() => sync.save()}>Retry</button>}
               {folderPath && (
@@ -1299,7 +1304,8 @@ function SlideWorkspace({ sync }) {
             <button type="button" className="btn btn-sm btn-dark" onClick={sync.keepMine}>Keep my version</button>
           </div>
         )}
-        {readOnly && (
+        {viewOnly && <ViewOnlyNotice className="m-2" />}
+        {trashed && !viewOnly && (
           <div className="alert alert-secondary d-flex align-items-center gap-2 m-2 py-2" role="alert">
             <span className="me-auto">This presentation is in the trash, so it can&apos;t be edited.</span>
             <button type="button" className="btn btn-sm btn-primary" onClick={restore}><FontAwesomeIcon icon={faRotateLeft} className="me-1" />Restore</button>

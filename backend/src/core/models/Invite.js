@@ -1,6 +1,7 @@
 'use strict';
 
 const { Schema, model } = require('mongoose');
+const { ACCESS_LEVELS } = require('../access');
 
 // A link that lets people join a workspace. Only a SHA-256 hash of the link's
 // token is stored. Expired links are deleted by a TTL index on expiresAt.
@@ -15,6 +16,9 @@ const inviteSchema = new Schema(
     // null: no limit.
     maxUses: { type: Number, default: null },
     uses: { type: Number, default: 0 },
+    // Links a platform admin made from People: the app access applied to whoever
+    // joins with it (see access.js).
+    access: { type: Map, of: { type: String, enum: ACCESS_LEVELS }, default: undefined },
   },
   { timestamps: true },
 );
