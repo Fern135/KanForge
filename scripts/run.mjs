@@ -24,8 +24,12 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
 
 const isWindows = process.platform === 'win32';
-const PROD = ['compose', '-f', 'docker-compose.yml'];
-const DEV = [...PROD, '-f', 'docker-compose.dev.yml'];
+// A build on top of Kanforge (a hosted service, say) can add its own compose files:
+// KANFORGE_EXTRA_COMPOSE for both modes, KANFORGE_EXTRA_COMPOSE_DEV for dev only.
+// Paths inside them are relative to this repo's root.
+const extra = (name) => (process.env[name] ? process.env[name].split(',').flatMap((f) => ['-f', f.trim()]) : []);
+const PROD = ['compose', '-f', 'docker-compose.yml', ...extra('KANFORGE_EXTRA_COMPOSE')];
+const DEV = [...PROD, '-f', 'docker-compose.dev.yml', ...extra('KANFORGE_EXTRA_COMPOSE_DEV')];
 const CERT_DIR = join('docker', 'nginx', 'certs');
 
 const color = (code) => (s) => (process.stdout.isTTY ? `\x1b[${code}m${s}\x1b[0m` : s);

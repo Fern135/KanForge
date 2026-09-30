@@ -29,7 +29,7 @@ server {
   ssl_session_timeout 1d;
   ssl_session_tickets off;
 
-  root /usr/share/nginx/html;
+  root /usr/share/kanforge/www;
   limit_conn conn 50;
   # Relative Location headers, so redirects keep whatever host and port the browser used.
   absolute_redirect off;
@@ -70,8 +70,8 @@ server {
     include /etc/nginx/snippets/proxy.conf;
   }
 
-  # The React app lives under /app/ and the static site at /. Keep the paths in
-  # sync with vite.config.js.
+  # The React app lives under /app/. A hosted build can add its own pages at /
+  # (see the site stage in the Dockerfile). Keep the paths in sync with vite.config.js.
   location = /app { return 301 /app/$is_args$args; }
 
   # Old app URLs (from before the /app/ move) keep working.
@@ -93,11 +93,31 @@ server {
     try_files $uri /app/index.html;
   }
 
-  # Static site: /pricing serves pricing.html or pricing/index.html.
+  # Site pages if the build has any (/pricing serves pricing.html or
+  # pricing/index.html), with the site's own 404 page for anything else.
+  # Without a site, everything else opens the app.
   location / {
     include /etc/nginx/snippets/security-headers.conf;
     add_header Cache-Control "no-cache" always;
-    try_files $uri $uri.html $uri/index.html =404;
+    try_files $uri $uri.html $uri/index.html @nopage;
+  }
+
+  location @nopage {
+    if (-f $document_root/index.html) { return 404; }
+    return 302 /app/;
+  }
+
+  # A server's own robots.txt, if its site has one. Otherwise search engines are
+  # asked to stay out, so a private install doesn't end up in search results.
+  location = /robots.txt {
+    include /etc/nginx/snippets/security-headers.conf;
+    try_files $uri @norobots;
+  }
+
+  location @norobots {
+    include /etc/nginx/snippets/security-headers.conf;
+    default_type text/plain;
+    return 200 "User-agent: *\nDisallow: /\n";
   }
 
   error_page 404 /404.html;

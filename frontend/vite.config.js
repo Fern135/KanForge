@@ -3,15 +3,16 @@ import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// The React app lives under /app/. Everything else is the static site in site/.
-// Keep these in sync with nginx/default.conf.template.
+// The React app lives under /app/. A hosted build can add its own pages at / by
+// mounting them at site/ (see the site stage in the Dockerfile); without them,
+// everything else opens the app. Keep these in sync with nginx/default.conf.template.
 const APP_BASE = '/app/';
 const SITE_DIR = path.resolve(import.meta.dirname, 'site');
 // Old app URLs (from before the /app/ move) that redirect into the app.
 const LEGACY_APP_PATHS = /^\/(?:login|register|account|admin|boards|notes|office|b)(?:\/|$)/;
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.txt': 'text/plain', '.xml': 'application/xml', '.png': 'image/png', '.webp': 'image/webp', '.ico': 'image/x-icon' };
 
-// Dev only: serve site/ at / and the legacy redirects, the same way nginx does in production.
+// Dev only: serve site/ (if there is one) and the redirects, the same way nginx does in production.
 function staticSite() {
   return {
     name: 'kanforge-static-site',
@@ -19,7 +20,12 @@ function staticSite() {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const url = new URL(req.url, 'http://localhost');
-        const p = decodeURIComponent(url.pathname);
+        let p;
+        try {
+          p = decodeURIComponent(url.pathname);
+        } catch {
+          p = url.pathname;
+        }
         if (p.startsWith(APP_BASE) || p.startsWith('/api/')) return next();
 
         const redirect = (to) => { res.statusCode = 302; res.setHeader('Location', to); res.end(); };
@@ -36,9 +42,16 @@ function staticSite() {
             return res.end(body);
           } catch { /* try the next candidate */ }
         }
+        // No site page: search engines stay out, and everything else opens the app.
+        if (p === '/robots.txt') {
+          res.setHeader('Content-Type', 'text/plain');
+          return res.end('User-agent: *\nDisallow: /\n');
+        }
+        const notFound = await readFile(path.join(SITE_DIR, '404.html')).catch(() => null);
+        if (!notFound) return redirect(APP_BASE);
         res.statusCode = 404;
         res.setHeader('Content-Type', 'text/html');
-        res.end(await readFile(path.join(SITE_DIR, '404.html')));
+        res.end(notFound);
       });
     },
   };

@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext';
 import { workspaceApi } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import { goTo, inviteUrl } from '../workspaceUrl';
+import { siteUrl } from '../site';
 import Spinner from '../components/Spinner';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -49,7 +50,7 @@ function General() {
           <dt className="col-4 col-sm-3 text-muted fw-normal">Plan</dt>
           <dd className="col-8 col-sm-9 mb-0">
             <span className="badge text-bg-success me-2">{workspace.planName}</span>
-            {workspace.plan !== 'self-hosted' && <a href="/pricing">Compare plans</a>}
+            {workspace.plan !== 'self-hosted' && siteUrl('/pricing') && <a href={siteUrl('/pricing')}>Compare plans</a>}
           </dd>
         </dl>
       </div>

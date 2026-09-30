@@ -36,7 +36,6 @@ services:
     volumes:
       - ./frontend/src:/app/src:ro
       - ./frontend/index.html:/app/index.html:ro
-      - ./frontend/site:/app/site:ro
       - ./frontend/vite.config.js:/app/vite.config.js:ro
     depends_on:
       api:

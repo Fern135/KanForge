@@ -1,6 +1,6 @@
 'use strict';
 
-// What each plan includes. Keep in sync with frontend/site/pricing.html.
+// What each plan includes. Keep in sync with the hosted service's pricing page.
 // apps: the app ids the plan includes (null = every app).
 // maxBoardsPerUser: boards one person can be on in a workspace (null = no limit).
 // seatPrice: monthly price per seat in US dollars, used for revenue estimates.

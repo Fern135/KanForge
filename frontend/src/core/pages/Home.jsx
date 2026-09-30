@@ -4,6 +4,23 @@ import { faScrewdriverWrench } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../context/AuthContext';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { UPCOMING_APPS } from '../../apps';
+import { siteUrl } from '../site';
+
+// An app the workspace's plan doesn't include. It links to pricing when there's a
+// site to link to (a hosted build).
+function LockedTile({ app }) {
+  const pricing = siteUrl('/pricing');
+  const inner = (
+    <>
+      <span className="app-tile-icon"><FontAwesomeIcon icon={app.icon} /></span>
+      <span className="fw-bold">{app.name}</span>
+      <span className="badge rounded-pill app-tile-badge">In Plus</span>
+    </>
+  );
+  return pricing
+    ? <a href={pricing} className="app-tile app-tile-soon text-decoration-none">{inner}</a>
+    : <div className="app-tile app-tile-soon" aria-disabled="true">{inner}</div>;
+}
 
 export default function Home() {
   const { user } = useAuth();
@@ -39,11 +56,7 @@ export default function Home() {
         ))}
         {locked.map((app) => (
           <div className="col-6 col-md-4 col-lg-3" key={app.id}>
-            <a href="/pricing" className="app-tile app-tile-soon text-decoration-none">
-              <span className="app-tile-icon"><FontAwesomeIcon icon={app.icon} /></span>
-              <span className="fw-bold">{app.name}</span>
-              <span className="badge rounded-pill app-tile-badge">In Plus</span>
-            </a>
+            <LockedTile app={app} />
           </div>
         ))}
         {UPCOMING_APPS.map((app) => (

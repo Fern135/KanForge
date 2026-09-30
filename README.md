@@ -170,7 +170,7 @@ On the first run, the launcher also does this automatically:
 
 ### 3. Open it
 
-Go to **https://localhost:8443/app/register** and create an account. The public landing page is at **https://localhost:8443**.
+Go to **https://localhost:8443** and create an account (opening the server's address goes straight to the app).
 
 Then make that account the platform admin (the super admin who runs the server):
 
@@ -208,7 +208,7 @@ Running `prod` or `dev` switches modes directly, so you don't need `down` in bet
 ### Dev mode
 
 `dev` runs the Vite dev server with hot reload at **http://localhost:5173** (the app is at **/app/**). The API also restarts on save.
-- Edits in `frontend/src/`, `frontend/site/` and `backend/src/` show up immediately. There's nothing to rebuild.
+- Edits in `frontend/src/` and `backend/src/` show up immediately. There's nothing to rebuild.
 - Dev mode uses the same database as production mode, so your boards appear in both.
 - If you change `package.json` in either app, run `dev` again to rebuild the image.
 
@@ -247,6 +247,13 @@ Settings live in `.env`, which is created on the first run. It's git-ignored and
 > Changing `COMPOSE_PROJECT_NAME` or the `MONGO_*` users after the first run points to new, empty volumes. Back up first.
 
 ---
+
+## Adding your own pages
+
+A Kanforge server opens straight into the app. To put pages of your own at `/` (a landing or pricing page), build the web image with them:
+
+- `docker build --build-context site=<folder> --build-arg VITE_SITE_URL=/ frontend` adds the folder's files at `/` (`about.html` is served at `/about`). `VITE_SITE_URL` makes sign-in link back to them.
+- Or keep your own compose file next to Kanforge and name it in `KANFORGE_EXTRA_COMPOSE` (both modes) or `KANFORGE_EXTRA_COMPOSE_DEV` (dev mode only) when using `run.sh`.
 
 ## Deploying to a server
 
@@ -294,7 +301,7 @@ If another proxy or load balancer sits in front of nginx, adjust `TRUST_PROXY` i
 │   ├── migrations/           migrate-mongo migrations
 │   ├── scripts/seed.js       Demo data
 │   └── test/                 Integration and security tests
-└── frontend/                 React app (served at /app/) and static site in site/ (served at /)
+└── frontend/                 React app (served at /app/; / opens it)
     ├── src/
     │   ├── core/             Sign-in, account, admin, home, navbar, shared components (folder tree)
     │   ├── apps/             One folder per app, listed in apps/index.js, each at /<app>

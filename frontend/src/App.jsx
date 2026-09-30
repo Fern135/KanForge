@@ -7,6 +7,7 @@ import Spinner from './core/components/Spinner';
 import Login from './core/pages/Login';
 import Register from './core/pages/Register';
 import { APPS } from './apps';
+import { siteUrl } from './core/site';
 import {
   WORKSPACE_SLUG, goTo, isInvitePath, isWorkspacePath, lastWorkspace, workspaceUrl,
 } from './core/workspaceUrl';
@@ -88,7 +89,10 @@ function AppGate({ id, children }) {
       ) : (
         <>
           <h1 className="h5 fw-bold">{name} isn&apos;t in your plan</h1>
-          <p className="text-muted">It&apos;s included in the Plus plan. See <a href="/pricing">pricing</a>.</p>
+          <p className="text-muted">
+            It&apos;s included in the Plus plan.
+            {siteUrl('/pricing') && <> See <a href={siteUrl('/pricing')}>pricing</a>.</>}
+          </p>
         </>
       )}
       <Link to="/" className="btn btn-primary">Back to home</Link>
