@@ -8,6 +8,7 @@ const { body, ids, z } = require('../../core/middleware/validate');
 const AppError = require('../../core/utils/AppError');
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+// Per person, across every workspace they're in.
 const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 // A just-uploaded image may not be saved into its document yet, so cleanup leaves new ones alone.
 const GRACE_MS = 24 * 60 * 60 * 1000;
@@ -29,21 +30,24 @@ function detectMime(buf) {
   return null;
 }
 
-// Deletes the owner's images that no document (including ones in the trash) uses.
+const everywhere = { allWorkspaces: true };
+
+// Deletes the owner's images that none of their documents (in any workspace,
+// including the trash) uses.
 async function collectGarbage(ownerId) {
-  const used = await OfficeDocument.distinct('imageIds', { owner: ownerId });
+  const used = await OfficeDocument.distinct('imageIds', { owner: ownerId }).setOptions(everywhere);
   await OfficeImage.deleteMany({
     owner: ownerId,
     _id: trusted({ $nin: used }),
     createdAt: trusted({ $lt: new Date(Date.now() - GRACE_MS) }),
-  });
+  }).setOptions(everywhere);
 }
 
 async function usedBytes(ownerId) {
   const [row] = await OfficeImage.aggregate([
     { $match: { owner: new Types.ObjectId(ownerId) } },
     { $group: { _id: null, total: { $sum: '$size' } } },
-  ]);
+  ], everywhere);
   return row?.total || 0;
 }
 
@@ -60,10 +64,16 @@ function imagesRouter(limiters) {
     if ((await usedBytes(req.user.id)) + data.length > MAX_TOTAL_BYTES) {
       await collectGarbage(req.user.id);
       if ((await usedBytes(req.user.id)) + data.length > MAX_TOTAL_BYTES) {
-        throw AppError.badRequest('Your documents have reached the 200 MB image limit', 'LIMIT');
+        throw AppError.badRequest('Your documents have reached the 200 MB image limit across all your workspaces', 'LIMIT');
       }
     }
     const image = await OfficeImage.create({ owner: req.user.id, mime, data, size: data.length });
+    // Uploads running at the same moment can all pass the check above. If together
+    // they went over, this one is undone.
+    if ((await usedBytes(req.user.id)) > MAX_TOTAL_BYTES) {
+      await OfficeImage.deleteOne({ _id: image._id });
+      throw AppError.badRequest('Your documents have reached the 200 MB image limit across all your workspaces', 'LIMIT');
+    }
     res.status(201).json({ image: { id: String(image._id), mime, size: data.length } });
   });
 

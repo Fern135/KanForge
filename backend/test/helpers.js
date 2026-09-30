@@ -6,6 +6,7 @@ const { connectMongo, disconnectMongo, mongoose } = require('../src/core/db/mong
 const { redis, connectRedis, disconnectRedis } = require('../src/core/db/redis');
 const { createApp } = require('../src/app');
 const Workspace = require('../src/core/models/Workspace');
+const Membership = require('../src/core/models/Membership');
 const migrations = [
   require('../migrations/20260926000001-initial-schema'),
   require('../migrations/20260927000001-card-checklist-settings'),
@@ -16,6 +17,8 @@ const migrations = [
   require('../migrations/20260929000002-note-folders'),
   require('../migrations/20260930000001-office'),
   require('../migrations/20261001000001-workspaces'),
+  require('../migrations/20261002000001-invites'),
+  require('../migrations/20261003000001-search-text'),
 ];
 
 if (!config.isTest || !new URL(config.mongoUri).pathname.endsWith('_test')) {
@@ -24,16 +27,18 @@ if (!config.isTest || !new URL(config.mongoUri).pathname.endsWith('_test')) {
 
 let app;
 
-// Every test account joins this workspace (it auto-joins sign-ups), and auth()
-// sends it by default, so app tests run inside a workspace like the real client.
+// registerUser() adds every test account to this workspace (as if it had used an
+// invite link), and auth() sends it by default, so app tests run inside a
+// workspace like the real client.
 const TEST_WORKSPACE = 'test-space';
+let testWorkspaceId;
 
 async function setup() {
   await Promise.all([connectMongo(), connectRedis()]);
   await mongoose.connection.db.dropDatabase();
   for (const m of migrations) await m.up(mongoose.connection.db);
   await flushRedis();
-  await Workspace.create({ name: 'Test', slug: TEST_WORKSPACE, plan: 'self-hosted', autoJoin: true });
+  testWorkspaceId = (await Workspace.create({ name: 'Test', slug: TEST_WORKSPACE, plan: 'self-hosted' }))._id;
   app = createApp();
   return app;
 }
@@ -65,7 +70,8 @@ function cookiesFrom(res) {
 }
 
 let counter = 0;
-async function registerUser(overrides = {}) {
+// joinTestWorkspace: false leaves the account in no workspace, like a real sign-up.
+async function registerUser(overrides = {}, { joinTestWorkspace = true } = {}) {
   counter += 1;
   const creds = {
     email: `user${counter}-${Date.now()}@test.dev`,
@@ -74,6 +80,7 @@ async function registerUser(overrides = {}) {
     ...overrides,
   };
   const res = await api().post('/api/auth/register').send(creds).expect(201);
+  if (joinTestWorkspace) await Membership.create({ workspace: testWorkspaceId, user: res.body.user.id, role: 'member' });
   return { ...creds, token: res.body.accessToken, user: res.body.user, cookies: cookiesFrom(res), res };
 }
 
@@ -83,4 +90,11 @@ const auth = (token, workspace = TEST_WORKSPACE) => ({
   ...(workspace ? { 'X-Workspace': workspace } : {}),
 });
 
-module.exports = { setup, teardown, api, registerUser, auth, cookiesFrom, flushRedis, migrations, TEST_WORKSPACE };
+// Brings `user` into workspace `slug` the only way there is: an invite link
+// made by `admin`, accepted by `user`.
+async function joinWorkspace(admin, slug, user, role = 'member') {
+  const { token } = (await api().post('/api/workspace/invites').set(auth(admin.token, slug)).send({ role, maxUses: 1 }).expect(201)).body;
+  await api().post('/api/invites/accept').set(auth(user.token, null)).send({ token }).expect(201);
+}
+
+module.exports = { setup, teardown, api, registerUser, auth, cookiesFrom, flushRedis, joinWorkspace, migrations, TEST_WORKSPACE };

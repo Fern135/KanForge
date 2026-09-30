@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBuilding, faCubes, faUsers } from '@fortawesome/free-solid-svg-icons';
+import { faBuilding, faCopy, faCubes, faLink, faUsers } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../context/AuthContext';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { useToast } from '../context/ToastContext';
 import { workspaceApi } from '../api/endpoints';
 import { errorMessage } from '../api/client';
-import { goTo } from '../workspaceUrl';
+import { goTo, inviteUrl } from '../workspaceUrl';
 import Spinner from '../components/Spinner';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -62,29 +62,12 @@ function Members() {
   const { isAdmin } = useWorkspace();
   const toast = useToast();
   const [members, setMembers] = useState(null);
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState('member');
   const [busy, setBusy] = useState('');
   const [removing, setRemoving] = useState(null);
 
   useEffect(() => {
     workspaceApi.members().then((d) => setMembers(d.members)).catch((err) => toast.error(errorMessage(err)));
   }, [toast]);
-
-  const add = async (e) => {
-    e.preventDefault();
-    setBusy('add');
-    try {
-      const { member } = await workspaceApi.addMember(email.trim(), role);
-      setMembers((list) => [...list, member]);
-      setEmail('');
-      toast.success(`${member.name} was added`);
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setBusy('');
-    }
-  };
 
   const changeRole = async (m, next) => {
     setBusy(m.id);
@@ -124,20 +107,8 @@ function Members() {
         <h2 className="h6 fw-bold mb-1"><FontAwesomeIcon icon={faUsers} className="me-2 text-success" />Members</h2>
         <p className="text-muted small mb-3">
           Admins manage members, apps and the workspace name. There&apos;s always at least one admin.
+          {isAdmin && ' To add someone, send them an invite link (below).'}
         </p>
-        {isAdmin && (
-          <form className="d-flex flex-column flex-sm-row gap-2 mb-3" onSubmit={add}>
-            <label className="visually-hidden" htmlFor="member-email">Email</label>
-            <input id="member-email" type="email" className="form-control" maxLength={254} placeholder="Email of someone with an account"
-              value={email} onChange={(e) => setEmail(e.target.value)} required />
-            <label className="visually-hidden" htmlFor="member-role">Role</label>
-            <select id="member-role" className="form-select flex-shrink-0" style={{ width: 'auto' }} value={role} onChange={(e) => setRole(e.target.value)}>
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-            </select>
-            <button type="submit" className="btn btn-primary flex-shrink-0" disabled={busy === 'add' || !email.trim()}>Add</button>
-          </form>
-        )}
         <ul className="list-group list-group-flush">
           {members.map((m) => (
             <li className="list-group-item px-0 d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2" key={m.id}>
@@ -174,6 +145,123 @@ function Members() {
           confirmLabel={self ? 'Leave workspace' : 'Remove'}
           onClose={() => setRemoving(null)}
           onConfirm={() => remove(removing)}
+        />
+      )}
+    </section>
+  );
+}
+
+const EXPIRY_DAYS = [1, 7, 14, 30];
+const fmtDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+// Workspace admins only. A link's address is shown once, right after it's made:
+// the server keeps only a hash of it.
+function Invites() {
+  const toast = useToast();
+  const [invites, setInvites] = useState(null);
+  const [form, setForm] = useState({ role: 'member', expiresInDays: 7, maxUses: '' });
+  const [created, setCreated] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [revoking, setRevoking] = useState(null);
+
+  useEffect(() => {
+    workspaceApi.invites().then((d) => setInvites(d.invites)).catch((err) => toast.error(errorMessage(err)));
+  }, [toast]);
+
+  const create = async (e) => {
+    e.preventDefault();
+    setBusy('create');
+    try {
+      const maxUses = form.maxUses ? Number(form.maxUses) : null;
+      const { invite, token } = await workspaceApi.createInvite({ role: form.role, expiresInDays: form.expiresInDays, maxUses });
+      setInvites((list) => [invite, ...list]);
+      setCreated(inviteUrl(token));
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(created);
+      toast.success('Invite link copied');
+    } catch {
+      toast.error('Could not copy. Select the link and copy it yourself.');
+    }
+  };
+
+  const revoke = async (invite) => {
+    try {
+      await workspaceApi.revokeInvite(invite.id);
+    } catch (err) {
+      toast.error(errorMessage(err));
+      throw err;
+    }
+    setInvites((list) => list.filter((i) => i.id !== invite.id));
+    toast.success('Invite link revoked');
+  };
+
+  if (!invites) return <Spinner />;
+
+  return (
+    <section className="card border-0 shadow-sm mb-4">
+      <div className="card-body">
+        <h2 className="h6 fw-bold mb-1"><FontAwesomeIcon icon={faLink} className="me-2 text-success" />Invite links</h2>
+        <p className="text-muted small mb-3">
+          Anyone with a link can join this workspace after signing in or creating an account. Share links privately, and revoke any you no longer need.
+        </p>
+        <form className="d-flex flex-column flex-sm-row gap-2 mb-3" onSubmit={create}>
+          <label className="visually-hidden" htmlFor="invite-role">Role</label>
+          <select id="invite-role" className="form-select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            <option value="member">Joins as member</option>
+            <option value="admin">Joins as admin</option>
+          </select>
+          <label className="visually-hidden" htmlFor="invite-expiry">Expires</label>
+          <select id="invite-expiry" className="form-select" value={form.expiresInDays}
+            onChange={(e) => setForm({ ...form, expiresInDays: Number(e.target.value) })}>
+            {EXPIRY_DAYS.map((d) => <option key={d} value={d}>Expires in {d} {d === 1 ? 'day' : 'days'}</option>)}
+          </select>
+          <label className="visually-hidden" htmlFor="invite-uses">Uses</label>
+          <select id="invite-uses" className="form-select" value={form.maxUses} onChange={(e) => setForm({ ...form, maxUses: e.target.value })}>
+            <option value="">Any number of uses</option>
+            {[1, 5, 10, 25, 100].map((n) => <option key={n} value={n}>{n === 1 ? 'One use' : `${n} uses`}</option>)}
+          </select>
+          <button type="submit" className="btn btn-primary flex-shrink-0" disabled={busy === 'create'}>Create link</button>
+        </form>
+        {created && (
+          <div className="alert alert-success py-2 small">
+            <div className="fw-semibold mb-1">Copy this link now. It won&apos;t be shown again.</div>
+            <div className="input-group input-group-sm">
+              <input className="form-control" readOnly value={created} aria-label="Invite link" onFocus={(e) => e.target.select()} />
+              <button type="button" className="btn btn-outline-success" onClick={copy}><FontAwesomeIcon icon={faCopy} className="me-1" />Copy</button>
+            </div>
+          </div>
+        )}
+        {invites.length ? (
+          <ul className="list-group list-group-flush">
+            {invites.map((i) => (
+              <li className="list-group-item px-0 d-flex align-items-center justify-content-between gap-2" key={i.id}>
+                <div className="small">
+                  <span className="fw-semibold">{i.role === 'admin' ? 'Admin' : 'Member'} link</span>
+                  <div className="text-muted">
+                    Expires {fmtDate(i.expiresAt)} · {i.uses} {i.maxUses ? `of ${i.maxUses} uses` : (i.uses === 1 ? 'use' : 'uses')}
+                  </div>
+                </div>
+                <button type="button" className="btn btn-sm btn-outline-danger flex-shrink-0" onClick={() => setRevoking(i)}>Revoke</button>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="text-muted small mb-0">No active invite links.</p>}
+      </div>
+      {revoking && (
+        <ConfirmModal
+          title="Revoke this invite link?"
+          message="It stops working right away. People who already joined stay in the workspace."
+          confirmLabel="Revoke"
+          onClose={() => setRevoking(null)}
+          onConfirm={() => revoke(revoking)}
         />
       )}
     </section>
@@ -224,11 +312,13 @@ function Apps() {
 }
 
 export default function WorkspaceSettings() {
+  const { isAdmin } = useWorkspace();
   return (
     <main className="container py-4" style={{ maxWidth: 760 }}>
       <h1 className="h4 fw-bold text-primary mb-4">Workspace settings</h1>
       <General />
       <Members />
+      {isAdmin && <Invites />}
       <Apps />
     </main>
   );

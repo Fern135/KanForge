@@ -1,20 +1,20 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const express = require('express');
 const argon2 = require('argon2');
-const { trusted } = require('mongoose');
 const config = require('../config');
 const User = require('../models/User');
-const Settings = require('../models/Settings');
 const events = require('../services/events');
-const workspaces = require('../services/workspaces');
 const tokens = require('../services/tokens');
 const lockout = require('../services/lockout');
+const { verifyCurrentPassword } = require('../services/currentPassword');
 const cache = require('../services/cache');
 const { requireAuth } = require('../middleware/auth');
 const { requireCsrf } = require('../middleware/csrf');
 const { body, z } = require('../middleware/validate');
 const AppError = require('../utils/AppError');
+const { audit, emailHash } = require('../utils/audit');
 
 // OWASP-recommended Argon2id parameters (19 MiB, t=2, p=1). This is strong and
 // still fast enough to keep login snappy.
@@ -98,29 +98,32 @@ async function rememberPinDevice(req, res, userId) {
   res.cookie(config.pinDevice.cookieName, raw, { ...pinCookieOpts(), maxAge: config.pinDevice.ttlMs });
 }
 
-// Makes this user admin if nobody has claimed admin yet. The conditional upsert
-// is atomic, so two sign-ups racing on a new install can't both win.
-async function claimFirstAdmin(user) {
-  try {
-    const r = await Settings.updateOne(
-      { _id: Settings.INSTANCE, adminClaimed: trusted({ $ne: true }) },
-      { $set: { adminClaimed: true } },
-      { upsert: true },
-    );
-    if (!r.upsertedCount && !r.modifiedCount) return;
-  } catch (err) {
-    // The settings document exists and admin is already claimed.
-    if (err?.code === 11000) return;
-    throw err;
-  }
-  user.role = 'admin';
-  await user.save();
+// "This browser has signed in to this account before" (see services/lockout.js).
+// A MAC of the email under the server secret, so it can't be made without signing in.
+const knownDeviceValue = (mail) =>
+  crypto.createHmac('sha256', config.jwt.secret).update(`known-device:${mail}`).digest('base64url');
+
+function isKnownDevice(req, mail) {
+  const raw = req.cookies?.[config.knownDevice.cookieName];
+  const expected = knownDeviceValue(mail);
+  return typeof raw === 'string' && raw.length === expected.length && crypto.timingSafeEqual(Buffer.from(raw), Buffer.from(expected));
+}
+
+function rememberKnownDevice(res, mail) {
+  res.cookie(config.knownDevice.cookieName, knownDeviceValue(mail), {
+    httpOnly: true,
+    secure: config.refresh.cookieSecure,
+    sameSite: 'strict',
+    path: config.refresh.cookiePath,
+    maxAge: config.knownDevice.ttlMs,
+  });
 }
 
 async function startSession(req, res, user, status = 200) {
-  const refreshToken = await tokens.createSession(user._id, meta(req));
+  const { token: refreshToken, family } = await tokens.createSession(user._id, meta(req));
   setAuthCookies(res, refreshToken);
-  res.status(status).json({ user: user.toJSON(), accessToken: tokens.signAccessToken(user) });
+  rememberKnownDevice(res, user.email);
+  res.status(status).json({ user: user.toJSON(), accessToken: tokens.signAccessToken(user, family) });
 }
 
 module.exports = function authRouter(limiters) {
@@ -140,14 +143,14 @@ module.exports = function authRouter(limiters) {
       if (err?.code === 11000) throw AppError.conflict('An account with that email already exists', 'EMAIL_TAKEN');
       throw err;
     }
-    await claimFirstAdmin(user);
-    await workspaces.joinAutoJoin(user._id);
+    audit(req, 'account.created', { user: String(user._id) });
     await startSession(req, res, user, 201);
   });
 
   router.post('/login', limiters.auth, body(loginSchema), async (req, res) => {
     const { email: mail, password: pwd } = req.body;
-    if (await lockout.isLocked(mail, req.ip)) {
+    if (await lockout.isLocked(mail, req.ip, 'password', { knownDevice: isKnownDevice(req, mail) })) {
+      audit(req, 'signin.locked', { method: 'password', emailHash: emailHash(mail) });
       throw AppError.tooMany('Too many failed attempts. Try again in 15 minutes.', 'LOCKED');
     }
     const user = await User.findOne({ email: mail }).select('+passwordHash +pinHash');
@@ -156,6 +159,7 @@ module.exports = function authRouter(limiters) {
       : (await argon2.verify(await DUMMY_HASH_PROMISE, pwd), false);
 
     if (!ok) {
+      audit(req, 'signin.failed', { method: 'password', ...(user ? { user: String(user._id) } : { emailHash: emailHash(mail), unknownAccount: true }) });
       await lockout.registerFailure(mail, req.ip);
       throw AppError.unauthorized('Invalid email or password', 'BAD_CREDENTIALS');
     }
@@ -167,6 +171,7 @@ module.exports = function authRouter(limiters) {
     }
     // With the PIN on, a password sign-in also sets up this device for PIN sign-in.
     if (user.pinHash) await rememberPinDevice(req, res, user._id);
+    audit(req, 'signin.succeeded', { method: 'password', user: String(user._id) });
     await startSession(req, res, user);
   });
 
@@ -194,14 +199,17 @@ module.exports = function authRouter(limiters) {
       clearPinDevice(res);
       throw AppError.unauthorized('This device isn\'t set up for PIN sign-in. Sign in with your password.', 'PIN_DEVICE_UNKNOWN');
     }
-    if (await lockout.isLocked(user.email, req.ip, 'pin')) {
+    if (await lockout.isLocked(user.email, req.ip, 'pin', { knownDevice: isKnownDevice(req, user.email) })) {
+      audit(req, 'signin.locked', { method: 'pin', user: String(user._id) });
       throw AppError.tooMany('Too many failed attempts. Try again in 15 minutes.', 'LOCKED');
     }
     if (!(await argon2.verify(user.pinHash, req.body.pin))) {
+      audit(req, 'signin.failed', { method: 'pin', user: String(user._id) });
       await lockout.registerFailure(user.email, req.ip, 'pin');
       throw AppError.unauthorized('Incorrect PIN', 'BAD_CREDENTIALS');
     }
     await lockout.clearFailures(user.email, req.ip, 'pin');
+    audit(req, 'signin.succeeded', { method: 'pin', user: String(user._id) });
     await startSession(req, res, user);
   });
 
@@ -219,11 +227,20 @@ module.exports = function authRouter(limiters) {
       throw AppError.unauthorized('Session expired', 'REFRESH_INVALID');
     }
     setAuthCookies(res, result.token);
-    res.json({ user: user.toJSON(), accessToken: tokens.signAccessToken(user) });
+    res.json({ user: user.toJSON(), accessToken: tokens.signAccessToken(user, result.family) });
   });
 
   router.post('/logout', limiters.refresh, requireCsrf, async (req, res) => {
     await tokens.revokeSession(req.cookies?.[config.refresh.cookieName]);
+    // The access token this tab was using stops working too.
+    const [scheme, access] = (req.get('authorization') || '').split(' ');
+    if (scheme === 'Bearer' && access && access.length <= 2048) {
+      try {
+        await tokens.revokeAccessToken(tokens.verifyAccessToken(access));
+      } catch {
+        // Already invalid or expired: nothing to cancel.
+      }
+    }
     clearAuthCookies(res);
     res.status(204).end();
   });
@@ -235,6 +252,7 @@ module.exports = function authRouter(limiters) {
     await cache.invalidateUser(req.user.id);
     clearAuthCookies(res);
     clearPinDevice(res);
+    audit(req, 'signout.everywhere');
     res.status(204).end();
   });
 
@@ -253,9 +271,7 @@ module.exports = function authRouter(limiters) {
 
   router.post('/change-password', limiters.sensitive, requireAuth, body(changePasswordSchema), async (req, res) => {
     const user = await User.findById(req.user.id).select('+passwordHash +pinHash');
-    if (!(await argon2.verify(user.passwordHash, req.body.currentPassword))) {
-      throw AppError.badRequest('Current password is incorrect', 'BAD_CREDENTIALS');
-    }
+    await verifyCurrentPassword(req, user, req.body.currentPassword);
     user.passwordHash = await argon2.hash(req.body.newPassword, ARGON_OPTS);
     user.tokenVersion += 1;
     await user.save();
@@ -265,6 +281,7 @@ module.exports = function authRouter(limiters) {
     // Other devices lose PIN sign-in along with their sessions. This one keeps it.
     if (user.pinHash) await rememberPinDevice(req, res, user._id);
     else clearPinDevice(res);
+    audit(req, 'password.changed');
     await startSession(req, res, user);
   });
 
@@ -277,22 +294,20 @@ module.exports = function authRouter(limiters) {
   // Turning it on or changing it also sets up this device for PIN sign-in.
   router.put('/pin', limiters.sensitive, requireAuth, body(setPinSchema), async (req, res) => {
     const user = await User.findById(req.user.id).select('+passwordHash');
-    if (!(await argon2.verify(user.passwordHash, req.body.currentPassword))) {
-      throw AppError.badRequest('Current password is incorrect', 'BAD_CREDENTIALS');
-    }
+    await verifyCurrentPassword(req, user, req.body.currentPassword);
     user.pinHash = await argon2.hash(req.body.pin, ARGON_OPTS);
     await user.save();
     await rememberPinDevice(req, res, user._id);
+    audit(req, 'pin.enabled');
     res.json({ enabled: true });
   });
 
   router.post('/pin/disable', limiters.sensitive, requireAuth, body(disablePinSchema), async (req, res) => {
     const user = await User.findById(req.user.id).select('+passwordHash');
-    if (!(await argon2.verify(user.passwordHash, req.body.currentPassword))) {
-      throw AppError.badRequest('Current password is incorrect', 'BAD_CREDENTIALS');
-    }
+    await verifyCurrentPassword(req, user, req.body.currentPassword);
     await User.updateOne({ _id: user._id }, { $unset: { pinHash: '', pinDevices: '' } });
     clearPinDevice(res);
+    audit(req, 'pin.disabled');
     res.json({ enabled: false });
   });
 

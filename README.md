@@ -20,10 +20,10 @@
 
 **Workspaces**
 - Everything lives in a workspace (a team or company). One account can belong to several, and the navbar's workspace menu switches between them. Each workspace has its own address, `/app/w/<name>/`
-- Workspace admins add people by the email they signed up with, choose who's an admin, rename the workspace and turn its apps on or off. There's always at least one admin. When someone leaves or is removed, their boards pass to an admin
+- Workspace admins invite people with invite links (people are never added directly), choose who's an admin, rename the workspace and turn its apps on or off. There's always at least one admin. When someone leaves or is removed, their boards pass to an admin
 - Boards can only be shared with people in the same workspace, and nothing is visible across workspaces
 - Each workspace has a plan: **Self-hosted** (every app, no limits), **Standard** (Boards and Notes, up to 100 boards per person) or **Plus** (every app, unlimited boards). New workspaces start on `DEFAULT_PLAN`
-- On a self-hosted install, the first workspace takes in everyone who signs up later ("auto-join"), so a single team works like it always did. Platform admins can change plans and auto-join from Platform admin
+- People join a workspace through invite links its admins create under Workspace settings. A link can join people as members or admins, expires after 1 to 30 days and can be limited to a number of uses. Signing up on its own doesn't give access to any workspace. Links can be revoked, and each one is shown only once, when it's created
 
 **Boards**
 - Create, rename and delete boards. Each person can be on up to 100 boards, counting ones shared with them. The boards page warns at 80, and invites are refused once someone is at 100
@@ -83,7 +83,7 @@
 - Search titles and text, filter by tag, and pin notes to the top
 - Archive, and a trash that deletes notes after 30 days (or empty it yourself)
 - Import Markdown files or a whole folder such as an Obsidian vault, keeping its subfolders (a leading `# Heading` becomes the title, front-matter `tags:` become tags). Download one note as Markdown, or export everything as a .zip that keeps the folder structure
-- Up to 2,000 notes per account, including the trash
+- Up to 2,000 notes per account across all your workspaces, including the trash
 
 **Office: Docs**
 - A word processor that looks and works like Word or LibreOffice Writer, built into Kanforge. There's no separate office server to run
@@ -96,7 +96,7 @@
 - Saves automatically. If the same document changed elsewhere, you choose which version to keep
 - Documents live in nested folders, with rename, copy, move and a trash that deletes after 30 days
 - Tick documents in the list (Shift-click for a run) to download them together (one file, or a .zip of Word and Excel files), move them to a folder, copy them or move them to the trash; in the trash, restore or delete them for good. Any document can also be downloaded from its row menu
-- Up to 1,000 documents per account including the trash. Images can be up to 5 MB each and 200 MB per account; images no longer used in any document are removed after a day
+- Up to 1,000 documents and 1 GB of document storage per account across all your workspaces, including the trash. Images can be up to 5 MB each and 200 MB per account in total; images no longer used in any document are removed after a day
 
 **Office: Sheets**
 - A spreadsheet that looks and works like Excel or LibreOffice Calc, with its own formula engine. Nothing runs on a separate server
@@ -125,11 +125,11 @@
 **Accounts**
 - Email and password sign-up and sign-in. You stay signed in for 14 days without activity
 - Edit your profile name, change your password and "sign out everywhere"
-- The first account created on a new install becomes the platform admin. Platform admins run the whole server (plans, auto-join, other platform admins) but only see workspace names and seat counts, not what's inside. There's always at least one
+- Signing up never makes anyone platform admin. On a new install, create your account, then run `make admin email=you@example.com` (or `./run.sh admin you@example.com`) on the server. Platform admins run the whole server (plans and other platform admins) but only see workspace names and seat counts, not what's inside. There's always at least one
 - Optional security PIN (6 to 8 digits), off by default. Once added under Account & security, you sign in with just the PIN, without typing your email. It works on devices where you've turned it on or signed in with your password since; a new device asks for the password once
 
 **Security first**
-- Argon2id, rotating refresh tokens, CSRF protection, rate limits, strict CSP, and non-root read-only containers. See [Security](#security)
+- Regularly security-audited, with every workspace kept private to its members. See [Security](#security)
 
 **Stack:**
 - Node.js 22 (Express 5), MongoDB 8.2, Redis 7
@@ -171,6 +171,12 @@ On the first run, the launcher also does this automatically:
 ### 3. Open it
 
 Go to **https://localhost:8443/app/register** and create an account. The public landing page is at **https://localhost:8443**.
+
+Then make that account the platform admin (the super admin who runs the server):
+
+| | macOS / Linux | Windows (PowerShell or cmd) |
+| --- | --- | --- |
+| **Make admin** | `./run.sh admin you@example.com` | `.\run admin you@example.com` |
 
 > The local certificate is self-signed, so your browser shows a warning the first time.
 > Click **Advanced → Proceed to localhost**. This is expected locally. For a real server, see [Deploying to a server](#deploying-to-a-server).
@@ -243,9 +249,10 @@ Settings live in `.env`, which is created on the first run. It's git-ignored and
 ## Deploying to a server
 
 1. Point a domain at the server and open ports 80 and 443.
-2. In `.env`, set `APP_ORIGIN=https://boards.example.com`, `HTTP_PORT=80` and `HTTPS_PORT=443`.
-3. Replace `docker/nginx/certs/tls.crt` and `tls.key` with a real certificate, for example from Let's Encrypt. `tls.crt` should be the full chain.
+2. In `.env`, set `APP_ORIGIN=https://boards.example.com`, `HTTP_PORT=80` and `HTTPS_PORT=443`. Running it as a paid hosted service? Also add `DEFAULT_PLAN=standard`, or every new workspace starts on the free Self-hosted plan with every app.
+3. Replace `docker/nginx/certs/tls.crt` and `tls.key` with a real certificate, for example from Let's Encrypt. `tls.crt` should be the full chain. Then make the private key readable only by you and nginx in the container (group 101): `sudo chgrp 101 docker/nginx/certs/tls.key && sudo chmod 640 docker/nginx/certs/tls.key`
 4. Run `./run.sh prod`. Containers restart automatically after a reboot.
+   Create your account, then run `./run.sh admin you@example.com` to make it the platform admin.
 5. Schedule `make backup` (for example with a daily cron job) and copy the dumps somewhere safe and encrypted.
 6. Run `make audit` from time to time, and pull and restart to pick up updates.
 
@@ -304,7 +311,7 @@ browser ──HTTPS──▶ nginx (web) ──▶ api (Express) ──▶ mongo
 - Every document people create (boards, lists, cards, comments, notes, documents, folders, images) carries a required `workspace`. A Mongoose plugin (`backend/src/core/tenancy.js`) adds the current workspace to every query, update, delete, aggregate and insert on those models, and throws if there's no workspace, so a forgotten filter can't leak data between workspaces. The workspace comes from the `X-Workspace` header, and membership is checked on every request.
 - Each app depends only on `core`, never on another app. Core tells apps about account changes through events (for example `user.renamed`), so it never imports app code.
 - Only nginx publishes ports. MongoDB and Redis sit on an `internal` Docker network with no route out.
-- Redis caches board payloads and user lookups. The caches are invalidated on every write, including when a member changes their name. Redis also stores rate-limit counters and login-lockout state.
+- Redis caches board payloads and user lookups. The caches are invalidated on every write, including when a member changes their name. Redis also stores rate-limit counters.
 - Cards and lists use fractional positions, so a drag writes a single document. The server renumbers a list only when gaps run out.
 - The UI updates immediately on drag. Moves are queued and sent in order, and on error the board reloads from the server.
 
@@ -312,54 +319,16 @@ browser ──HTTPS──▶ nginx (web) ──▶ api (Express) ──▶ mongo
 
 ## Security
 
-**Authentication**
-- Passwords are hashed with Argon2id (OWASP parameters) and must be at least 12 characters. They're rehashed automatically when the parameters change.
-- Login takes the same time whether or not the email exists (a dummy hash is verified), so timing doesn't reveal accounts.
-- Access tokens are HS256 JWTs that last 10 minutes. The algorithm, issuer and audience are pinned. Tokens are kept only in memory, never in localStorage.
-- Refresh tokens are 384-bit random values in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to `/api/auth`. Only their SHA-256 hash is stored.
-- Refresh tokens rotate on every use, with reuse detection: replaying an old token revokes the whole session family.
-- Cookie endpoints require a double-submit CSRF token, and state-changing requests from a foreign `Origin` are rejected.
-- Signing out everywhere or changing your password immediately invalidates every outstanding access token.
-- The security PIN is off for new accounts. Adding, changing or removing it needs your current password. It's hashed with Argon2id, trivial PINs (111111, 123456, …) are rejected, and the PIN only works on a device remembered for that account.
-- PIN sign-in is tied to a remembered device: a random token in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to `/api/auth`, stored only as a SHA-256 hash, valid for 90 days, at most 10 per account. Turning the PIN off, changing your password or signing out everywhere forgets these devices (changing your password keeps the device you're on).
+Keeping your data safe is built into Kanforge from the ground up, whether you use our hosted service or run it on your own server.
 
-**Abuse protection**
-- Every request is rate-limited, and the API counts it before reading the request body. nginx limits per IP. The API adds, in Redis:
-  - a per-IP limit on every route (600/min), including unknown paths
-  - per-user limits on board, note and document changes (300/min each), on bulk imports and exports (30 per 15 min per app), and on Office image uploads (200 per 15 min)
-  - stricter per-IP limits on sign-in, token refresh, password change, profile edits, "sign out everywhere" and invites
-- Health checks have their own in-memory limit, so they keep answering when Redis is down.
-- Login locks out per email+IP (after 5 failures) and per account (after 20). PIN sign-in has its own, stricter counters: per email+IP after 5 failures and per account after 10.
-- Payloads are capped at 32 KB (256 KB for the bulk import endpoints and Notes, 3 MB for Office documents, 8 MB for Office image uploads), requests must be JSON, and there are per-board, per-list and per-account count limits.
+- **Regular security audits.** Kanforge's code, its dependencies and its server setup are security-audited on an ongoing basis, and anything found is fixed promptly.
+- **Encrypted connections.** Everything between your browser and Kanforge travels over HTTPS.
+- **Strong account protection.** Passwords are never stored in readable form, and sign-in is protected against password guessing.
+- **Your workspace stays yours.** Every workspace is kept separate from every other one, and nobody joins without an invitation.
+- **Least access by default.** Each part of the system runs with only the permissions it needs, and the database is never reachable from the internet.
+- **Up-to-date dependencies.** Third-party packages are checked for known vulnerabilities and kept current.
 
-**Authorization**
-- Every board-scoped query filters by a board the caller is a member of, so IDs from other boards don't work (IDOR).
-- Non-members get 404, not 403, so board IDs can't be probed.
-- Owner-only actions are enforced on the server.
-- Tenant isolation: every query on workspace data is scoped by the tenancy plugin, which fails closed outside a workspace. Non-members of a workspace get 404, and board invites only find people in the same workspace, with the same answer for unknown emails.
-- Workspace membership is read on every request, so removing someone takes effect immediately. Workspace admin actions need the workspace admin role.
-- The platform admin API needs the platform admin role, which is checked on every request. A demotion takes effect within seconds, and removing the last admin is refused. Two sign-ups racing on a new install can't both become admin.
-- A turned-off app answers 404 on every route, and an app outside the workspace's plan answers 403.
-
-**Input and output**
-- Strict Zod schemas reject unknown keys, which blocks mass assignment and `__proto__` payloads.
-- Mongoose `sanitizeFilter` stops NoSQL operator injection, and MongoDB `$jsonSchema` validators enforce document shape in the database too.
-- Responses use allow-list serializers. Errors are generic, with no stack traces, and logs redact credentials.
-- User content is rendered only as text, never as HTML. Notes and documents are stored as the editor's JSON document, and the server rebuilds each one from an allow-list of elements before saving: unknown elements are refused, unknown attributes dropped, links other than http(s) and mailto removed, and fonts, sizes and colours checked against fixed lists and formats.
-- Office images are checked by their file signature (PNG, JPEG, GIF or WebP; no SVG), stored in the database, and served only to their owner with the sign-in token. They never get a public URL.
-- Imported Word, Excel and CSV files are converted in the browser, then go through the same server-side allow-list as anything typed.
-- Spreadsheets are stored as values, formula text and formats, each checked against an allow-list and size limits. Formulas are worked out only in the browser, never on the server, and there are no functions that reach the network or run code. CSV downloads put an apostrophe before text starting with `=`, `+`, `-` or `@`, so other spreadsheet programs don't run it as a formula.
-
-**Infrastructure**
-- MongoDB has separate least-privilege users: the API gets `readWrite` only, and migrations get `dbAdmin`.
-- Redis uses an ACL: the default user is disabled and `@dangerous` commands (FLUSHALL, CONFIG, KEYS, …) are blocked.
-- Containers run as non-root with read-only root filesystems, `no-new-privileges` and every Linux capability dropped.
-- TLS 1.2/1.3 only, HTTP redirects to HTTPS, and HSTS is on.
-- A strict CSP allows no inline scripts. There's also `frame-ancestors 'none'`, nosniff, a no-referrer policy, COOP/CORP and a locked-down Permissions-Policy.
-
-**Known trade-offs**
-- Registration reveals whether an email is already registered. It's rate-limited, and this is standard UX.
-- The CSP allows inline *styles*, which the drag-and-drop library needs. Scripts stay strictly `'self'`.
+**Running it yourself?** Install a real certificate (see [Deploying to a server](#deploying-to-a-server)), keep Kanforge updated by pulling and running `./run.sh prod` again, and run `make audit` from time to time. Sign-ins, admin changes and invites are recorded in the server log: `docker compose logs api | grep '"audit":true'`.
 
 Found a vulnerability? Please report it privately to the maintainer instead of opening a public issue.
 

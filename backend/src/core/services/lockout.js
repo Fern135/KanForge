@@ -10,6 +10,9 @@ const config = require('../config');
 //    distributed guessing.
 // PIN sign-in is counted separately and locks the account sooner, because a
 // PIN has far fewer possible values than a password.
+// The account-wide lock doesn't apply to a browser that has signed in to the
+// account before (knownDevice), so strangers failing on purpose can't lock the
+// owner out of their usual devices. The email+IP lock still applies to everyone.
 const SCOPES = {
   password: { prefix: '', accountMax: 20 },
   pin: { prefix: 'pin:', accountMax: 10 },
@@ -26,10 +29,10 @@ const keys = (email, ip, scope) => {
   };
 };
 
-async function isLocked(email, ip, scope = 'password') {
+async function isLocked(email, ip, scope = 'password', { knownDevice = false } = {}) {
   const k = keys(email, ip, scope);
   const [pair, acct] = await redis.mget(k.pairLock, k.acctLock);
-  return Boolean(pair || acct);
+  return Boolean(pair || (acct && !knownDevice));
 }
 
 async function registerFailure(email, ip, scope = 'password') {

@@ -71,6 +71,12 @@ module.exports = Object.freeze({
     ttlMs: 90 * 24 * 60 * 60 * 1000,
     max: 10,
   }),
+  // Marks a browser that has signed in to an account before. Such browsers skip the
+  // account-wide lockout (not the per-IP one), so strangers can't lock people out.
+  knownDevice: Object.freeze({
+    cookieName: 'kd',
+    ttlMs: 180 * 24 * 60 * 60 * 1000,
+  }),
   lockout: Object.freeze({
     maxAttempts: 5,
     windowSeconds: 15 * 60,

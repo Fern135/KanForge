@@ -12,8 +12,6 @@ const workspaceSchema = new Schema(
     plan: { type: String, enum: PLAN_IDS, required: true },
     // Per-app on/off overrides set by workspace admins. Apps missing here use their default.
     apps: { type: Map, of: Boolean, default: undefined },
-    // New sign-ups on this server join this workspace. Only platform admins can set it.
-    autoJoin: { type: Boolean, default: false },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true },

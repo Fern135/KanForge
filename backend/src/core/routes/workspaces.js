@@ -5,12 +5,15 @@ const { trusted } = require('mongoose');
 const User = require('../models/User');
 const Workspace = require('../models/Workspace');
 const Membership = require('../models/Membership');
+const Invite = require('../models/Invite');
 const events = require('../services/events');
 const workspaces = require('../services/workspaces');
+const { workspaceInvitesRouter } = require('./invites');
 const { requireWorkspaceAdmin, SLUG_RE } = require('../middleware/workspace');
 const { planOf } = require('../plans');
 const { body, ids, z } = require('../middleware/validate');
 const AppError = require('../utils/AppError');
+const { audit } = require('../utils/audit');
 
 const MAX_MEMBERS_LISTED = 1000;
 
@@ -20,10 +23,6 @@ const createSchema = z.strictObject({
   slug: z.string().trim().toLowerCase().regex(SLUG_RE, 'Use 3 to 40 lowercase letters, numbers and hyphens'),
 });
 const renameSchema = z.strictObject({ name });
-const addMemberSchema = z.strictObject({
-  email: z.string().trim().toLowerCase().max(254).pipe(z.email()),
-  role: z.enum(Membership.ROLES).default('member'),
-});
 const roleSchema = z.strictObject({ role: z.enum(Membership.ROLES) });
 const appSchema = z.strictObject({ enabled: z.boolean() });
 
@@ -36,6 +35,10 @@ const member = (u, m) => ({
 });
 
 const adminCount = (workspaceId) => Membership.countDocuments({ workspace: workspaceId, role: 'admin' });
+// Invite links belong to the admin who made them: they stop working once that
+// person is no longer an admin of the workspace.
+const dropInvitesBy = (workspaceId, userId) => Invite.deleteMany({ workspace: workspaceId, createdBy: userId });
+
 const lastAdmin = () => AppError.conflict('A workspace needs at least one admin. Make someone else an admin first.', 'LAST_ADMIN');
 
 // Mounted at /api/workspaces behind requireAuth: the caller's workspaces.
@@ -87,21 +90,9 @@ function currentWorkspaceRouter({ limiters, appState }) {
     });
   });
 
-  // Adds someone who already has an account on this server.
-  router.post('/members', limiters.sensitive, requireWorkspaceAdmin, body(addMemberSchema), async (req, res) => {
-    const user = await User.findOne({ email: req.body.email }).select('name email').lean();
-    if (!user) {
-      throw AppError.notFound('No account uses that email. Ask them to sign up first, then add them.', 'USER_NOT_FOUND');
-    }
-    let m;
-    try {
-      m = await Membership.create({ workspace: ws(req), user: user._id, role: req.body.role });
-    } catch (err) {
-      if (err?.code === 11000) throw AppError.conflict('They are already in this workspace', 'ALREADY_MEMBER');
-      throw err;
-    }
-    res.status(201).json({ member: member(user, m) });
-  });
+  // People are never added directly (that would confirm which emails have
+  // accounts, and put people in workspaces without asking): they join through
+  // invite links (routes/invites.js).
 
   router.patch('/members/:userId', limiters.sensitive, requireWorkspaceAdmin, ids('userId'), body(roleSchema), async (req, res) => {
     const before = await Membership.findOneAndUpdate(
@@ -115,6 +106,8 @@ function currentWorkspaceRouter({ limiters, appState }) {
       await Membership.updateOne({ _id: before._id }, { $set: { role: 'admin' } });
       throw lastAdmin();
     }
+    if (req.body.role === 'member') await dropInvitesBy(ws(req), req.params.userId);
+    audit(req, 'workspace.role_changed', { target: req.params.userId, from: before.role, to: req.body.role });
     const user = await User.findById(req.params.userId).select('name email').lean();
     res.json({ member: member(user, { ...before, role: req.body.role }) });
   });
@@ -144,9 +137,13 @@ function currentWorkspaceRouter({ limiters, appState }) {
       await Membership.create({ workspace: m.workspace, user: m.user, role: 'admin' });
       throw lastAdmin();
     }
+    await dropInvitesBy(ws(req), target);
+    audit(req, self ? 'workspace.left' : 'workspace.member_removed', { target });
     await events.emit('workspace.memberRemoved', { userId: target, successorId });
     res.status(204).end();
   });
+
+  router.use('/invites', requireWorkspaceAdmin, workspaceInvitesRouter({ limiters }));
 
   router.patch('/apps/:appId', limiters.sensitive, requireWorkspaceAdmin, body(appSchema), async (req, res) => {
     const app = appState.find(req.workspace, req.params.appId);

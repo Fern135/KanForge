@@ -19,6 +19,7 @@ const authRouter = require('./core/routes/auth');
 const adminRouter = require('./core/routes/admin');
 const appsRouter = require('./core/routes/apps');
 const { workspacesRouter, currentWorkspaceRouter } = require('./core/routes/workspaces');
+const { invitesRouter } = require('./core/routes/invites');
 const manifests = require('./apps');
 
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH']);
@@ -89,6 +90,7 @@ function createApp() {
   // Account-level routes: no workspace.
   app.use('/api/auth', authRouter(limiters));
   app.use('/api/workspaces', requireAuth, workspacesRouter({ limiters }));
+  app.use('/api/invites', requireAuth, invitesRouter({ limiters }));
   app.use('/api/admin', requireAuth, requireAdmin, adminRouter({ limiters }));
 
   // Everything below runs inside the workspace named by the X-Workspace header.

@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const { trusted } = require('mongoose');
+const { trusted, Types } = require('mongoose');
 const OfficeDocument = require('./models/OfficeDocument');
 const OfficeFolder = require('./models/OfficeFolder');
 const folders = require('./folders');
@@ -10,9 +10,13 @@ const { sanitizeDocContent, EMPTY_DOC, PAGE_SIZES, DEFAULT_SETTINGS } = require(
 const { sanitizeSheetContent, emptyWorkbook, SHEET_SETTINGS } = require('./sheetContent');
 const { sanitizeSlideContent, emptyDeck, SLIDE_SETTINGS } = require('./slideContent');
 const { body, ids, objectId, z } = require('../../core/middleware/validate');
+const { searchable, searchClause, runSearch } = require('../../core/services/search');
 const AppError = require('../../core/utils/AppError');
 
+// Per person, across every workspace they're in (so creating more workspaces
+// doesn't raise them), trash included.
 const MAX_DOCUMENTS_PER_USER = 1000;
+const MAX_STORAGE_BYTES = 1024 * 1024 * 1024;
 const MAX_LISTED = 1000;
 
 // Each kind's content check, starting content and page setup.
@@ -60,7 +64,6 @@ const listQuery = z.object({
   deep: z.enum(['0', '1']).optional(),
 });
 
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const iso = (d) => (d ? new Date(d).toISOString() : null);
 
 const summary = (d) => ({
@@ -100,23 +103,48 @@ async function resolveFolder(req, id) {
   return (await folders.findFolder(req.user.id, id))._id;
 }
 
-async function assertRoom(req) {
-  if ((await OfficeDocument.countDocuments(mine(req))) >= MAX_DOCUMENTS_PER_USER) {
-    throw AppError.badRequest(`You can have up to ${MAX_DOCUMENTS_PER_USER} documents, including the trash`, 'LIMIT');
-  }
+const everywhere = { allWorkspaces: true };
+
+async function storedBytes(ownerId) {
+  const [row] = await OfficeDocument.aggregate([
+    { $match: { owner: new Types.ObjectId(ownerId) } },
+    { $group: { _id: null, total: { $sum: '$size' } } },
+  ], everywhere);
+  return row?.total || 0;
+}
+
+const documentCount = (req) => OfficeDocument.countDocuments({ owner: req.user.id }).setOptions(everywhere);
+const tooMany = () => AppError.badRequest(`You can have up to ${MAX_DOCUMENTS_PER_USER} documents across all your workspaces, including the trash`, 'LIMIT');
+const tooBig = () => AppError.badRequest('Your documents have reached the 1 GB storage limit across all your workspaces, including the trash', 'LIMIT');
+
+// adding: new documents. bytes: content size being saved. replacing: the size
+// of the content it replaces (when editing).
+async function assertRoom(req, { adding = 0, bytes = 0, replacing = 0 } = {}) {
+  if (adding && (await documentCount(req)) + adding > MAX_DOCUMENTS_PER_USER) throw tooMany();
+  // Edits that don't make a document bigger are always allowed.
+  if (bytes > replacing && (await storedBytes(req.user.id)) - replacing + bytes > MAX_STORAGE_BYTES) throw tooBig();
+}
+
+// Counts again once a new document is saved: requests running at the same moment
+// can all pass assertRoom. If together they went over, this one is undone.
+async function confirmRoom(req, docId) {
+  const [count, bytes] = await Promise.all([documentCount(req), storedBytes(req.user.id)]);
+  if (count <= MAX_DOCUMENTS_PER_USER && bytes <= MAX_STORAGE_BYTES) return;
+  await OfficeDocument.deleteOne({ _id: docId });
+  throw count > MAX_DOCUMENTS_PER_USER ? tooMany() : tooBig();
 }
 
 // Clean content plus the fields derived from it.
 function contentFields(docKind, content) {
   const { doc, text, imageIds } = KINDS[docKind].sanitize(content);
-  return { content: doc, text, imageIds, size: JSON.stringify(doc).length };
+  return { content: doc, text: searchable(text), imageIds, size: JSON.stringify(doc).length };
 }
 
 // Mounted at /api/office/documents.
-module.exports = function documentsRouter() {
+module.exports = function documentsRouter({ search }) {
   const router = express.Router();
 
-  router.get('/', async (req, res) => {
+  router.get('/', search, async (req, res) => {
     const { view, q, kind: byKind, folder, deep } = listQuery.parse(req.query);
     const filter = mine(req, { trashedAt: view === 'trash' ? trusted({ $ne: null }) : null });
     if (byKind) filter.kind = byKind;
@@ -124,18 +152,15 @@ module.exports = function documentsRouter() {
       if (folder === 'unfiled') filter.folder = null;
       else filter.folder = deep === '1' ? trusted({ $in: await folders.subtreeIds(req.user.id, folder) }) : folder;
     }
-    if (q) {
-      const re = new RegExp(escapeRegex(q), 'i');
-      filter.$or = [{ title: re }, { text: re }];
-    }
+    if (q) filter.$or = searchClause(q);
     const sort = view === 'trash' ? { trashedAt: -1 } : { updatedAt: -1 };
-    const docs = await OfficeDocument.find(filter).sort(sort).limit(MAX_LISTED).select('-content -text -imageIds').lean();
+    const docs = await runSearch(OfficeDocument.find(filter).sort(sort).limit(MAX_LISTED).select('-content -text -imageIds').lean(), Boolean(q));
     res.json({ documents: docs.map(summary) });
   });
 
   router.post('/', body(createSchema), async (req, res) => {
-    await assertRoom(req);
     const fields = contentFields(req.body.kind, req.body.content ?? KINDS[req.body.kind].empty());
+    await assertRoom(req, { adding: 1, bytes: fields.size });
     const doc = await OfficeDocument.create({
       owner: req.user.id,
       kind: req.body.kind,
@@ -144,6 +169,7 @@ module.exports = function documentsRouter() {
       folder: await resolveFolder(req, req.body.folderId),
       ...fields,
     });
+    await confirmRoom(req, doc._id);
     res.status(201).json({ document: full(doc.toObject()) });
   });
 
@@ -163,7 +189,10 @@ module.exports = function documentsRouter() {
 
     const { version, content, folderId: moveTo, ...fields } = req.body;
     const set = { ...fields };
-    if (content !== undefined) Object.assign(set, contentFields(current.kind, content));
+    if (content !== undefined) {
+      Object.assign(set, contentFields(current.kind, content));
+      await assertRoom(req, { bytes: set.size, replacing: current.size || 0 });
+    }
     if (moveTo !== undefined) set.folder = await resolveFolder(req, moveTo);
 
     // Title, content and page-setup changes only apply to the version the client last saw.
@@ -180,7 +209,7 @@ module.exports = function documentsRouter() {
   // "Make a copy", placed next to the original.
   router.post('/:docId/copy', ids('docId'), async (req, res) => {
     const source = await findMine(req);
-    await assertRoom(req);
+    await assertRoom(req, { adding: 1, bytes: source.size || 0 });
     const doc = await OfficeDocument.create({
       owner: req.user.id,
       kind: source.kind,
@@ -192,6 +221,7 @@ module.exports = function documentsRouter() {
       settings: source.settings,
       folder: source.folder,
     });
+    await confirmRoom(req, doc._id);
     res.status(201).json({ document: summary(doc.toObject()) });
   });
 

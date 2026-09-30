@@ -138,7 +138,7 @@ export default function Login() {
           </button>
         )}
         <p className="text-center text-muted mt-4 mb-0">
-          New here? <Link to="/register" className="fw-semibold">Create an account</Link>
+          New here? <Link to={`/register${search}`} className="fw-semibold">Create an account</Link>
         </p>
       </form>
     </AuthLayout>

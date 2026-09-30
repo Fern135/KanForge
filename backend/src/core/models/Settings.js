@@ -6,8 +6,6 @@ const { Schema, model } = require('mongoose');
 const settingsSchema = new Schema(
   {
     _id: { type: String },
-    // Set once the first account has been made admin.
-    adminClaimed: { type: Boolean, default: false },
     // Per-app on/off overrides. Apps missing here use their default.
     apps: { type: Map, of: Boolean, default: undefined },
   },

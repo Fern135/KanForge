@@ -7,16 +7,18 @@ const Membership = require('../models/Membership');
 const { PLAN_IDS, planOf } = require('../plans');
 const cache = require('../services/cache');
 const { body, ids, z } = require('../middleware/validate');
+const { confirmPassword, requireRecentAuth } = require('../middleware/recentAuth');
 const AppError = require('../utils/AppError');
+const { audit } = require('../utils/audit');
 
 // Enough for a self-hosted install. Paging and search come if an instance outgrows it.
 const MAX_USERS_LISTED = 500;
 const MAX_WORKSPACES_LISTED = 500;
 
 const workspaceSchema = z
-  .strictObject({ plan: z.enum(PLAN_IDS).optional(), autoJoin: z.boolean().optional() })
-  .refine((v) => Object.keys(v).length > 0, 'Nothing to update');
+  .strictObject({ plan: z.enum(PLAN_IDS) });
 const roleSchema = z.strictObject({ role: z.enum(['user', 'admin']) });
+const confirmSchema = z.strictObject({ password: z.string().min(1).max(128) });
 
 const adminUser = (u) => ({
   id: String(u._id),
@@ -33,7 +35,6 @@ const adminWorkspace = (ws, seats) => ({
   slug: ws.slug,
   plan: ws.plan,
   planName: planOf(ws.plan).name,
-  autoJoin: Boolean(ws.autoJoin),
   seats,
   createdAt: new Date(ws.createdAt).toISOString(),
 });
@@ -51,17 +52,24 @@ async function seatCounts(workspaceIds) {
 module.exports = function adminRouter({ limiters }) {
   const router = express.Router();
 
+  // Changes below need the password typed again within the last 10 minutes.
+  router.post('/confirm', limiters.sensitive, body(confirmSchema), async (req, res) => {
+    await confirmPassword(req, req.body.password);
+    res.status(204).end();
+  });
+
   router.get('/workspaces', async (_req, res) => {
     const list = await Workspace.find().sort({ createdAt: 1 }).limit(MAX_WORKSPACES_LISTED)
-      .select('name slug plan autoJoin createdAt').lean();
+      .select('name slug plan createdAt').lean();
     const seats = await seatCounts(list.map((w) => w._id));
     res.json({ workspaces: list.map((w) => adminWorkspace(w, seats.get(String(w._id)) || 0)) });
   });
 
-  router.patch('/workspaces/:workspaceId', limiters.sensitive, ids('workspaceId'), body(workspaceSchema), async (req, res) => {
+  router.patch('/workspaces/:workspaceId', limiters.sensitive, requireRecentAuth, ids('workspaceId'), body(workspaceSchema), async (req, res) => {
     const ws = await Workspace.findByIdAndUpdate(req.params.workspaceId, { $set: req.body }, { new: true })
-      .select('name slug plan autoJoin createdAt').lean();
+      .select('name slug plan createdAt').lean();
     if (!ws) throw AppError.notFound('Workspace not found');
+    audit(req, 'admin.plan_changed', { target: String(ws._id), plan: ws.plan });
     const seats = await seatCounts([ws._id]);
     res.json({ workspace: adminWorkspace(ws, seats.get(String(ws._id)) || 0) });
   });
@@ -71,7 +79,7 @@ module.exports = function adminRouter({ limiters }) {
     res.json({ users: users.map(adminUser) });
   });
 
-  router.patch('/users/:userId', limiters.sensitive, ids('userId'), body(roleSchema), async (req, res) => {
+  router.patch('/users/:userId', limiters.sensitive, requireRecentAuth, ids('userId'), body(roleSchema), async (req, res) => {
     const user = await User.findByIdAndUpdate(req.params.userId, { $set: { role: req.body.role } }, { new: false })
       .select('name email role createdAt')
       .lean();
@@ -84,6 +92,7 @@ module.exports = function adminRouter({ limiters }) {
       throw AppError.conflict('There must be at least one admin', 'LAST_ADMIN');
     }
     await cache.invalidateUser(String(user._id));
+    audit(req, 'admin.role_changed', { target: String(user._id), from: user.role || 'user', to: req.body.role });
     res.json({ user: adminUser({ ...user, role: req.body.role }) });
   });
 

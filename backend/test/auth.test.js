@@ -68,6 +68,64 @@ describe('auth', () => {
     await flushRedis();
   });
 
+  it('keeps the owner signed in on their usual browser while strangers lock the account', async () => {
+    const u = await registerUser();
+    const kd = u.res.headers['set-cookie'].find((c) => c.startsWith('kd='));
+    assert.match(kd, /HttpOnly/);
+    assert.match(kd, /SameSite=Strict/);
+    // Strangers fail from 4 addresses, 5 times each: the account-wide lock (20) kicks in.
+    for (let ip = 1; ip <= 4; ip += 1) {
+      for (let i = 0; i < 5; i += 1) {
+        await api().post('/api/auth/login').set('X-Forwarded-For', `203.0.113.${ip}`)
+          .send({ email: u.email, password: 'wrong password!!' }).expect(401);
+      }
+    }
+    const login = (ip, cookie) => {
+      const req = api().post('/api/auth/login').set('X-Forwarded-For', ip);
+      if (cookie) req.set('Cookie', [cookie]);
+      return req.send({ email: u.email, password: u.password });
+    };
+    // A browser that never signed in to this account is locked out, even with the right password.
+    assert.equal((await login('198.51.100.7')).body.error.code, 'LOCKED');
+    // The owner's browser still gets in.
+    await login('198.51.100.8', `kd=${u.cookies.kd}`).expect(200);
+    // Someone else's known-device cookie, or a made-up one, doesn't help.
+    const other = await registerUser();
+    assert.equal((await login('198.51.100.9', `kd=${other.cookies.kd}`)).body.error.code, 'LOCKED');
+    assert.equal((await login('198.51.100.9', `kd=${'x'.repeat(43)}`)).body.error.code, 'LOCKED');
+    await flushRedis();
+  });
+
+  it('locks password re-checks (change password, PIN) against guesses from many addresses', async () => {
+    const u = await registerUser();
+    const tries = [
+      (ip, pw) => api().post('/api/auth/change-password').set(auth(u.token)).set('X-Forwarded-For', ip).send({ currentPassword: pw, newPassword: 'a brand new passphrase' }),
+      (ip, pw) => api().put('/api/auth/pin').set(auth(u.token)).set('X-Forwarded-For', ip).send({ currentPassword: pw, pin: '480213' }),
+    ];
+    for (let n = 0; n < 20; n += 1) {
+      const res = await tries[n % 2](`203.0.113.${1 + Math.floor(n / 5)}`, 'wrong password!!');
+      assert.equal(res.body.error.code, 'BAD_CREDENTIALS');
+    }
+    const locked = await tries[0]('198.51.100.30', u.password);
+    assert.equal(locked.body.error.code, 'LOCKED');
+    await flushRedis();
+  });
+
+  it('stops the access token working as soon as you sign out', async () => {
+    const u = await registerUser();
+    await api().get('/api/auth/me').set(auth(u.token)).expect(200);
+    await api().post('/api/auth/logout')
+      .set('Cookie', [`rt=${u.cookies.rt}`, `csrf=${u.cookies.csrf}`])
+      .set('X-CSRF-Token', u.cookies.csrf)
+      .set(auth(u.token))
+      .expect(204);
+    const res = await api().get('/api/auth/me').set(auth(u.token)).expect(401);
+    assert.equal(res.body.error.code, 'TOKEN_INVALID');
+    // Other sessions of the same person keep working.
+    const again = await api().post('/api/auth/login').send({ email: u.email, password: u.password }).expect(200);
+    await api().get('/api/auth/me').set(auth(again.body.accessToken)).expect(200);
+  });
+
   it('requires CSRF token to refresh, and rotates the refresh token', async () => {
     const u = await registerUser();
     await api().post('/api/auth/refresh').set('Cookie', [`rt=${u.cookies.rt}`]).expect(403);

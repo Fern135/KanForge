@@ -37,6 +37,11 @@ module.exports = function listsRouter() {
     }
     const position = await positionAt(List, { board: boardId }, Number.MAX_SAFE_INTEGER);
     const list = await List.create({ board: boardId, title: req.body.title, position });
+    // Counted again: requests running at the same moment can all pass the check above.
+    if ((await List.countDocuments({ board: boardId })) > MAX_LISTS_PER_BOARD) {
+      await List.deleteOne({ _id: list._id });
+      throw AppError.badRequest('List limit reached', 'LIMIT');
+    }
     await cache.invalidateBoard(boardId);
     res.status(201).json({ list: s.list(list) });
   });

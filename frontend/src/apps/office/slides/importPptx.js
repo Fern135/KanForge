@@ -18,6 +18,14 @@ const FROM_PPT = Object.fromEntries(SHAPES.map((s) => [s.ppt, s.id]));
 Object.assign(FROM_PPT, { homePlate: 'chevron', wedgeRectCallout: 'callout', wedgeEllipseCallout: 'callout', star4: 'star5', star7: 'star6', star8: 'star6', flowChartProcess: 'rect', flowChartAlternateProcess: 'roundRect', round2SameRect: 'roundRect', snip1Rect: 'rect', upArrow: 'downArrow', leftArrow: 'arrow' });
 const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
 
+// A crafted file can claim to unpack to gigabytes (a "zip bomb"), so each part's
+// unpacked size is checked before it's unpacked. Only the XML and the pictures
+// Kanforge can use are unpacked at all; pictures over the 5 MB upload limit are skipped.
+const MAX_FILE = 100 * 1024 * 1024;
+const MAX_XML_PART = 50 * 1024 * 1024;
+const MAX_IMAGE = 5 * 1024 * 1024;
+const MAX_TOTAL = 500 * 1024 * 1024;
+
 const kids = (node, ns, name) => (node ? [...node.children].filter((c) => c.namespaceURI === ns && c.localName === name) : []);
 const kid = (node, ns, name) => kids(node, ns, name)[0] ?? null;
 const deep = (node, ns, name) => (node ? node.getElementsByTagNameNS(ns, name)[0] ?? null : null);
@@ -136,8 +144,36 @@ function readText(txBody, k, fallbackSize) {
   return { text: lines.join('\n').slice(0, LIMITS.text), style: out };
 }
 
+function unzipPptx(bytes) {
+  const tooBig = new Set();
+  let total = 0;
+  const files = unzipSync(bytes, {
+    filter: (f) => {
+      const ext = f.name.split('.').pop().toLowerCase();
+      const limit = ext === 'xml' || ext === 'rels' ? MAX_XML_PART : IMAGE_TYPES[ext] ? MAX_IMAGE : 0;
+      if (!limit) return false;
+      if (f.originalSize > limit || total + f.originalSize > MAX_TOTAL) {
+        tooBig.add(f.name);
+        return false;
+      }
+      total += f.originalSize;
+      return true;
+    },
+  });
+  return { files, tooBig };
+}
+
 export async function importPptx(file) {
-  const files = unzipSync(new Uint8Array(await file.arrayBuffer()));
+  if (file.size > MAX_FILE) throw new Error('PowerPoint files can be up to 100 MB.');
+  let unzipped;
+  try {
+    unzipped = unzipPptx(new Uint8Array(await file.arrayBuffer()));
+  } catch {
+    throw new Error('That isn\'t a PowerPoint (.pptx) file.');
+  }
+  const { files, tooBig } = unzipped;
+  // A slide or other part too big to unpack safely: the file can't be opened.
+  if ([...tooBig].some((name) => /\.(xml|rels)$/i.test(name))) throw new Error('This PowerPoint file is too large to open.');
   const presPath = 'ppt/presentation.xml';
   const pres = parse(files, presPath);
   if (!pres) throw new Error('That isn\'t a PowerPoint (.pptx) file.');
@@ -207,6 +243,10 @@ export async function importPptx(file) {
           const embed = deep(node, A, 'blip')?.getAttributeNS(R, 'embed');
           const media = embed && slideRels.get(embed)?.path;
           const ext = media?.split('.').pop().toLowerCase();
+          if (media && tooBig.has(media)) {
+            warnings.add('Some pictures are larger than 5 MB and were left out.');
+            continue;
+          }
           if (!media || !IMAGE_TYPES[ext] || !files[media]) {
             warnings.add('Some pictures use a format that can\'t be shown (such as EMF or SVG) and were left out.');
             continue;

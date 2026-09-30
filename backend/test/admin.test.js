@@ -2,9 +2,8 @@
 
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const User = require('../src/core/models/User');
-const Settings = require('../src/core/models/Settings');
-const { setup, teardown, api, registerUser, auth } = require('./helpers');
+const { makeAdmin } = require('../scripts/make-admin');
+const { setup, teardown, api, registerUser, auth, flushRedis } = require('./helpers');
 
 describe('platform admin', () => {
   let admin;
@@ -14,14 +13,17 @@ describe('platform admin', () => {
     await setup();
     admin = await registerUser();
     member = await registerUser();
+    await makeAdmin(admin.email);
+    await api().post('/api/admin/confirm').set(auth(admin.token)).send({ password: admin.password }).expect(204);
   });
   after(teardown);
 
-  it('makes the first account admin and nobody after it', async () => {
-    assert.equal(admin.res.body.user.role, 'admin');
+  it('never makes anyone admin by signing up, even the first account', async () => {
+    assert.equal(admin.res.body.user.role, 'user');
     assert.equal(member.res.body.user.role, 'user');
-    const me = await api().get('/api/auth/me').set(auth(member.token)).expect(200);
-    assert.equal(me.body.user.role, 'user');
+    assert.equal((await api().get('/api/auth/me').set(auth(member.token)).expect(200)).body.user.role, 'user');
+    // The server command made the first admin, and it applies at once.
+    assert.equal((await api().get('/api/auth/me').set(auth(admin.token)).expect(200)).body.user.role, 'admin');
   });
 
   it('keeps the platform admin API to platform admins', async () => {
@@ -32,10 +34,10 @@ describe('platform admin', () => {
     await api().get('/api/admin/users').set(auth(admin.token)).expect(200);
   });
 
-  it('lists workspaces with seat counts only, and sets plans and auto-join', async () => {
+  it('lists workspaces with seat counts only, and sets plans', async () => {
     const { body } = await api().get('/api/admin/workspaces').set(auth(admin.token)).expect(200);
     const ws = body.workspaces.find((w) => w.slug === 'test-space');
-    assert.deepEqual(Object.keys(ws).sort(), ['autoJoin', 'createdAt', 'id', 'name', 'plan', 'planName', 'seats', 'slug']);
+    assert.deepEqual(Object.keys(ws).sort(), ['createdAt', 'id', 'name', 'plan', 'planName', 'seats', 'slug']);
     assert.ok(ws.seats >= 2);
 
     const { body: changed } = await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({ plan: 'standard' }).expect(200);
@@ -43,13 +45,43 @@ describe('platform admin', () => {
     await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({ plan: 'gold' }).expect(400);
     await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({}).expect(400);
     await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({ plan: 'self-hosted' }).expect(200);
+    // Auto-join is gone: people join through invite links.
+    await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({ autoJoin: true }).expect(400);
+  });
 
-    // With auto-join off, new sign-ups start with no workspace.
-    await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({ autoJoin: false }).expect(200);
-    const loner = await registerUser();
-    const { body: mine } = await api().get('/api/workspaces').set(auth(loner.token, null)).expect(200);
-    assert.deepEqual(mine.workspaces, []);
-    await api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(admin.token)).send({ autoJoin: true }).expect(200);
+  it('asks for the password again before changes, per sign-in session', async () => {
+    // A second sign-in of the same admin (another device, or a stolen session) can look but not change.
+    const other = await api().post('/api/auth/login').send({ email: admin.email, password: admin.password }).expect(200);
+    const token = other.body.accessToken;
+    const ws = (await api().get('/api/admin/workspaces').set(auth(token)).expect(200)).body.workspaces[0];
+    const change = () => api().patch(`/api/admin/workspaces/${ws.id}`).set(auth(token)).send({ plan: ws.plan });
+    assert.equal((await change()).body.error.code, 'REAUTH_REQUIRED');
+    assert.equal((await api().patch(`/api/admin/users/${member.user.id}`).set(auth(token)).send({ role: 'admin' })).body.error.code, 'REAUTH_REQUIRED');
+
+    const wrong = await api().post('/api/admin/confirm').set(auth(token)).send({ password: 'not my password' });
+    assert.equal(wrong.body.error.code, 'BAD_CREDENTIALS');
+    await change().expect(403);
+    await api().post('/api/admin/confirm').set(auth(member.token)).send({ password: member.password }).expect(403);
+
+    await api().post('/api/admin/confirm').set(auth(token)).send({ password: admin.password }).expect(204);
+    await change().expect(200);
+  });
+
+  it('locks the password prompt against guesses from many addresses', async () => {
+    const lone = await registerUser();
+    await makeAdmin(lone.email);
+    for (let ip = 1; ip <= 4; ip += 1) {
+      for (let i = 0; i < 5; i += 1) {
+        await api().post('/api/admin/confirm').set(auth(lone.token)).set('X-Forwarded-For', `203.0.113.${ip}`)
+          .send({ password: 'wrong password!!' }).expect(400);
+      }
+    }
+    const res = await api().post('/api/admin/confirm').set(auth(lone.token)).set('X-Forwarded-For', '198.51.100.20').send({ password: lone.password });
+    assert.equal(res.body.error.code, 'LOCKED');
+    // Clears the lockout (and the main admin's confirmation with it, so confirm again).
+    await flushRedis();
+    await api().post('/api/admin/confirm').set(auth(admin.token)).send({ password: admin.password }).expect(204);
+    await api().patch(`/api/admin/users/${lone.user.id}`).set(auth(admin.token)).send({ role: 'user' }).expect(200);
   });
 
   it('promotes and demotes, and never removes the last admin', async () => {
@@ -69,11 +101,12 @@ describe('platform admin', () => {
     await api().patch(`/api/admin/users/${member.res.body.user.id}`).set(auth(admin.token)).send({ role: 'owner' }).expect(400);
   });
 
-  it('gives admin to exactly one of two sign-ups racing on a new install', async () => {
-    await Settings.deleteMany({});
-    await User.updateMany({}, { $set: { role: 'user' } });
-    const [a, b] = await Promise.all([registerUser(), registerUser()]);
-    const roles = [a.res.body.user.role, b.res.body.user.role].sort();
-    assert.deepEqual(roles, ['admin', 'user']);
+  it('makes admins from the command line only for existing accounts', async () => {
+    await assert.rejects(() => makeAdmin('nobody@test.dev'), /No account uses nobody@test.dev/);
+    await assert.rejects(() => makeAdmin(''), /Usage/);
+    const later = await registerUser();
+    const made = await makeAdmin(`  ${later.email.toUpperCase()} `);
+    assert.equal(made.role, 'admin');
+    await api().get('/api/admin/workspaces').set(auth(later.token)).expect(200);
   });
 });

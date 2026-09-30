@@ -69,6 +69,11 @@ module.exports = function cardsRouter(limiters) {
     return [...new Set(labels)];
   };
 
+  const listFull = () => AppError.badRequest(`A list can hold at most ${MAX_CARDS_PER_LIST} cards`, 'LIMIT');
+  // Counted again after a write: requests running at the same moment can all pass
+  // the check before it. Returns true when the list went over, so the caller undoes.
+  const overfull = async (listId) => (await Card.countDocuments({ list: listId })) > MAX_CARDS_PER_LIST;
+
   const done = async (req, res, card, status = 200) => {
     await cache.invalidateBoard(req.board._id);
     res.status(status).json({ card: s.card(card) });
@@ -88,6 +93,10 @@ module.exports = function cardsRouter(limiters) {
       position,
       createdBy: req.user.id,
     });
+    if (await overfull(listId)) {
+      await Card.deleteOne({ _id: card._id });
+      throw listFull();
+    }
     await done(req, res, card.toObject(), 201);
   });
 
@@ -110,6 +119,10 @@ module.exports = function cardsRouter(limiters) {
       createdBy: req.user.id,
     }));
     const created = await Card.insertMany(docs, { ordered: true });
+    if (await overfull(listId)) {
+      await Card.deleteMany({ board: req.board._id, _id: trusted({ $in: created.map((c) => c._id) }) });
+      throw listFull();
+    }
     await cache.invalidateBoard(req.board._id);
     res.status(201).json({ cards: created.map((c) => s.card(c.toObject())) });
   });
@@ -138,6 +151,10 @@ module.exports = function cardsRouter(limiters) {
     }
     const position = await positionAt(Card, { list: listId }, req.body.index, req.card._id);
     const card = await Card.findByIdAndUpdate(req.card._id, { $set: { list: listId, position } }, { new: true }).lean();
+    if (listId !== String(req.card.list) && (await overfull(listId))) {
+      await Card.updateOne({ _id: req.card._id }, { $set: { list: req.card.list, position: req.card.position } });
+      throw listFull();
+    }
     await done(req, res, card);
   });
 

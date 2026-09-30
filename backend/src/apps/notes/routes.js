@@ -10,8 +10,10 @@ const { namePaths, folderName, MAX_DEPTH } = require('../../core/services/folder
 
 const { findFolder, subtreeIds, listFolders, ensurePath } = folders;
 const { body, ids, objectId, z } = require('../../core/middleware/validate');
+const { searchable, searchClause, runSearch } = require('../../core/services/search');
 const AppError = require('../../core/utils/AppError');
 
+// Per person, across every workspace they're in.
 const MAX_NOTES_PER_USER = 2000;
 const MAX_LISTED = 1000;
 const MAX_IMPORT = 100;
@@ -59,7 +61,6 @@ const listQuery = z.object({
   deep: z.enum(['0', '1']).optional(),
 });
 
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const iso = (d) => (d ? new Date(d).toISOString() : null);
 
 const summary = (n) => ({
@@ -85,11 +86,19 @@ async function findMine(req) {
   return note;
 }
 
+const noteCount = (req) => Note.countDocuments({ owner: req.user.id }).setOptions({ allWorkspaces: true });
+const tooMany = () => AppError.badRequest(`You can have up to ${MAX_NOTES_PER_USER} notes across all your workspaces, including the trash`, 'LIMIT');
+
 async function assertRoom(req, adding) {
-  const count = await Note.countDocuments(mine(req));
-  if (count + adding > MAX_NOTES_PER_USER) {
-    throw AppError.badRequest(`You can have up to ${MAX_NOTES_PER_USER} notes, including the trash`, 'LIMIT');
-  }
+  if ((await noteCount(req)) + adding > MAX_NOTES_PER_USER) throw tooMany();
+}
+
+// Counts again once new notes are saved: requests running at the same moment can
+// all pass assertRoom. If together they went over, these notes are undone.
+async function confirmRoom(req, noteIds) {
+  if ((await noteCount(req)) <= MAX_NOTES_PER_USER) return;
+  await Note.deleteMany({ owner: req.user.id, _id: trusted({ $in: noteIds }) });
+  throw tooMany();
 }
 
 // null for "no folder"; otherwise the folder, which must belong to the caller.
@@ -103,7 +112,7 @@ module.exports = function notesRouter(limiters) {
 
   router.use('/folders', folders.router());
 
-  router.get('/', async (req, res) => {
+  router.get('/', limiters.search, async (req, res) => {
     const { view, q, tag: byTag, folder, deep } = listQuery.parse(req.query);
     const filter = mine(req);
     if (view === 'trash') {
@@ -118,12 +127,9 @@ module.exports = function notesRouter(limiters) {
       if (folder === 'unfiled') filter.folder = null;
       else filter.folder = deep === '1' ? trusted({ $in: await subtreeIds(req.user.id, folder) }) : folder;
     }
-    if (q) {
-      const re = new RegExp(escapeRegex(q), 'i');
-      filter.$or = [{ title: re }, { text: re }];
-    }
+    if (q) filter.$or = searchClause(q);
     const sort = view === 'trash' ? { trashedAt: -1 } : { pinned: -1, updatedAt: -1 };
-    const notes = await Note.find(filter).sort(sort).limit(MAX_LISTED).select('-content').lean();
+    const notes = await runSearch(Note.find(filter).sort(sort).limit(MAX_LISTED).select('-content').lean(), Boolean(q));
     res.json({ notes: notes.map(summary) });
   });
 
@@ -164,9 +170,10 @@ module.exports = function notesRouter(limiters) {
       folder,
       title: req.body.title ?? '',
       content: doc,
-      text,
+      text: searchable(text),
       tags: req.body.tags ?? [],
     });
+    await confirmRoom(req, [note._id]);
     res.status(201).json({ note: full(note.toObject()) });
   });
 
@@ -176,7 +183,7 @@ module.exports = function notesRouter(limiters) {
     await assertRoom(req, req.body.notes.length);
     const docs = req.body.notes.map((n) => {
       const { doc, text } = sanitizeDoc(n.content);
-      return { owner: req.user.id, title: n.title, content: doc, text, tags: n.tags ?? [], folderPath: n.folderPath ?? [] };
+      return { owner: req.user.id, title: n.title, content: doc, text: searchable(text), tags: n.tags ?? [], folderPath: n.folderPath ?? [] };
     });
     const cache = new Map();
     for (const d of docs) {
@@ -184,6 +191,7 @@ module.exports = function notesRouter(limiters) {
       delete d.folderPath;
     }
     const created = await Note.insertMany(docs);
+    await confirmRoom(req, created.map((n) => n._id));
     res.status(201).json({ imported: created.length });
   });
 
@@ -203,7 +211,7 @@ module.exports = function notesRouter(limiters) {
     const { version, content, folderId: moveTo, ...fields } = req.body;
     const set = { ...fields };
     if (moveTo !== undefined) set.folder = await resolveFolder(req, moveTo);
-    if (content !== undefined) Object.assign(set, (({ doc, text }) => ({ content: doc, text }))(sanitizeDoc(content)));
+    if (content !== undefined) Object.assign(set, (({ doc, text }) => ({ content: doc, text: searchable(text) }))(sanitizeDoc(content)));
 
     // Title and content changes only apply to the version the client last saw.
     const editsText = req.body.title !== undefined || content !== undefined;

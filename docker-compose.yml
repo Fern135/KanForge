@@ -27,10 +27,12 @@ x-api-env: &api-env
   # Plan for new workspaces: self-hosted (every app, no limits), standard or plus.
   DEFAULT_PLAN: ${DEFAULT_PLAN:-self-hosted}
 
+# Base images are pinned to exact digests (the tag is kept for reading). Dependabot
+# (.github/dependabot.yml) opens a pull request when a newer one is published.
 services:
   mongo:
     <<: *hardened
-    image: mongo:8.2
+    image: mongo:8.2@sha256:e0ce8c35124d4a9f9785532d1f268f39e9728ffa1cb38f46fa482436424c4bd3
     user: "999:999"
     command: ["mongod", "--auth", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.5"]
     environment:
@@ -56,7 +58,7 @@ services:
 
   redis:
     <<: *hardened
-    image: redis:7.4-alpine
+    image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     user: "999:1000"
     # ACL: the default user is disabled. The "app" user can run everything
     # except dangerous commands (FLUSHALL, CONFIG, KEYS, DEBUG, ...).
@@ -142,7 +144,8 @@ services:
       - /tmp:size=32m
       - /etc/nginx/conf.d:size=1m,uid=101,gid=101
     environment:
-      PUBLIC_HTTPS_PORT: ${HTTPS_PORT:-8443}
+      # Where plain-HTTP requests are redirected.
+      APP_ORIGIN: ${APP_ORIGIN}
     ports:
       - "${HTTP_PORT:-8080}:8080"
       - "${HTTPS_PORT:-8443}:8443"

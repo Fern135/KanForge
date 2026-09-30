@@ -7,6 +7,7 @@
 //   node scripts/run.mjs logs [service]
 //   node scripts/run.mjs status
 //   node scripts/run.mjs seed     demo user + sample board
+//   node scripts/run.mjs admin <email>   make an account platform admin
 //   node scripts/run.mjs migrate [up|down|status]
 //   node scripts/run.mjs test     backend test suite (isolated test database)
 //   node scripts/run.mjs setup    only generate .env and the TLS certificate
@@ -111,6 +112,9 @@ function setupCert() {
     res = docker(['run', '--rm', '-v', `${resolve(CERT_DIR)}:/certs`, 'alpine/openssl', ...req('/certs')], { quiet: true, allowFail: true });
   }
   if (!res.ok) fail('Could not generate the TLS certificate (openssl failed).');
+  // nginx reads these as its own user (uid 101) inside the container, so the key
+  // has to be readable by others. That's fine for this throwaway localhost
+  // certificate; the README shows how to lock down a real one (group 101, mode 640).
   if (!isWindows) {
     chmodSync(join(CERT_DIR, 'tls.key'), 0o644);
     chmodSync(join(CERT_DIR, 'tls.crt'), 0o644);
@@ -167,6 +171,14 @@ const commands = {
     docker([...PROD, 'run', '--rm', '-e', 'ALLOW_SEED=true', '--entrypoint', 'node', 'migrate', 'scripts/seed.js']);
   },
 
+  admin(email) {
+    if (!email) fail('Usage: admin <the email you signed up with>');
+    requireDocker();
+    setup();
+    docker([...PROD, 'up', '-d', '--wait', 'mongo', 'redis']);
+    docker([...PROD, 'run', '--rm', '--build', '--entrypoint', 'node', 'migrate', 'scripts/make-admin.js', email]);
+  },
+
   migrate(action = 'up') {
     if (!['up', 'down', 'status'].includes(action)) fail('Usage: migrate [up|down|status]');
     requireDocker();
@@ -193,6 +205,7 @@ ${bold('Usage:')} node scripts/run.mjs <command>   (or ./run.sh <command>, or .\
   ${bold('down')}            Stop the stack (data is kept)
   ${bold('logs')} [service]  Follow logs, e.g. "logs api"
   ${bold('status')}          Show container status
+  ${bold('admin')} <email>   Make an existing account platform admin
   ${bold('seed')}            Add a demo user and sample board (prints the login)
   ${bold('migrate')} [up|down|status]  Apply, roll back or list database migrations
   ${bold('test')}            Run the backend test suite (isolated test database)

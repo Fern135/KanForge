@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { limiter, perUser, READS } = require('../../core/middleware/rateLimit');
+const { searchLimiter } = require('../../core/services/search');
 const notesRouter = require('./routes');
 
 module.exports = {
@@ -32,6 +33,7 @@ module.exports = {
         keyGenerator: perUser,
         message: 'Too many imports or exports. Try again in a few minutes.',
       }),
+      search: searchLimiter('notes-search'),
     };
     const router = express.Router();
     router.use(own.writes);

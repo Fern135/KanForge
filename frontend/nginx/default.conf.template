@@ -11,7 +11,8 @@ upstream api_upstream {
 server {
   listen 8080;
   server_name _;
-  location / { return 301 https://$host:${PUBLIC_HTTPS_PORT}$request_uri; }
+  # Always to the configured address, never to whatever Host the request named.
+  location / { return 301 ${APP_ORIGIN}$request_uri; }
 }
 
 server {

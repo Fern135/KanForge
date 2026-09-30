@@ -29,13 +29,10 @@ async function listForUser(userId) {
   return workspaces.map((ws) => summary(ws, roles.get(String(ws._id))));
 }
 
-// The creator becomes its admin. The first workspace on a self-hosted install
-// also takes in everyone who signs up later, like a single-team install always did.
+// The creator becomes its admin. Everyone else joins through an invite link.
 async function create({ name, slug, userId }) {
-  if ((await Workspace.countDocuments({ createdBy: userId })) >= MAX_CREATED_PER_USER) {
-    throw AppError.badRequest(`You can create up to ${MAX_CREATED_PER_USER} workspaces`, 'LIMIT');
-  }
-  const first = !(await Workspace.exists({}));
+  const tooMany = () => AppError.badRequest(`You can create up to ${MAX_CREATED_PER_USER} workspaces`, 'LIMIT');
+  if ((await Workspace.countDocuments({ createdBy: userId })) >= MAX_CREATED_PER_USER) throw tooMany();
   let ws;
   try {
     ws = await Workspace.create({
@@ -43,26 +40,19 @@ async function create({ name, slug, userId }) {
       slug,
       plan: config.defaultPlan,
       createdBy: userId,
-      autoJoin: first && config.defaultPlan === 'self-hosted',
     });
   } catch (err) {
     if (err?.code === 11000) throw AppError.conflict('That address is already taken', 'SLUG_TAKEN');
     throw err;
   }
+  // Counted again: requests running at the same moment can all pass the check
+  // above. If together they went over, this one is undone.
+  if ((await Workspace.countDocuments({ createdBy: userId })) > MAX_CREATED_PER_USER) {
+    await Workspace.deleteOne({ _id: ws._id });
+    throw tooMany();
+  }
   await Membership.create({ workspace: ws._id, user: userId, role: 'admin' });
   return summary(ws.toObject(), 'admin');
 }
 
-// New accounts join every workspace the platform admin marked "auto-join".
-async function joinAutoJoin(userId) {
-  const workspaces = await Workspace.find({ autoJoin: true }).select('_id').lean();
-  if (!workspaces.length) return;
-  await Membership.insertMany(
-    workspaces.map((ws) => ({ workspace: ws._id, user: userId, role: 'member' })),
-    { ordered: false },
-  ).catch((err) => {
-    if (err?.code !== 11000 && !err?.writeErrors?.every((e) => e.code === 11000)) throw err;
-  });
-}
-
-module.exports = { listForUser, create, joinAutoJoin, summary, MAX_CREATED_PER_USER };
+module.exports = { listForUser, create, summary, MAX_CREATED_PER_USER };

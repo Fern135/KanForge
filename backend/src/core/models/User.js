@@ -6,7 +6,8 @@ const userSchema = new Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, maxlength: 254 },
     name: { type: String, required: true, trim: true, maxlength: 60 },
-    // The first account on a new install becomes admin. Admins manage apps and roles.
+    // Platform admins run the whole server. Never granted by signing up: the first one
+    // is made with `make admin email=...` (scripts/make-admin.js), later ones in the app.
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     passwordHash: { type: String, required: true, select: false },
     // Optional sign-in PIN. Off (unset) for every new account.

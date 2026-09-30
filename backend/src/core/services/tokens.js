@@ -5,6 +5,8 @@ const jwt = require('jsonwebtoken');
 const { trusted } = require('mongoose');
 const config = require('../config');
 const Session = require('../models/Session');
+const { redis } = require('../db/redis');
+const logger = require('../utils/logger');
 const AppError = require('../utils/AppError');
 
 // Two tabs refreshing at the same moment would otherwise look like token theft.
@@ -14,8 +16,9 @@ const ROTATION_GRACE_MS = 10_000;
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const randomToken = (bytes = 48) => crypto.randomBytes(bytes).toString('base64url');
 
-function signAccessToken(user) {
-  return jwt.sign({ ver: user.tokenVersion }, config.jwt.secret, {
+// sid: the sign-in session (refresh token family) the access token belongs to.
+function signAccessToken(user, sid) {
+  return jwt.sign({ ver: user.tokenVersion, sid }, config.jwt.secret, {
     algorithm: 'HS256',
     subject: String(user._id ?? user.id),
     expiresIn: config.jwt.ttlSeconds,
@@ -37,6 +40,28 @@ function verifyAccessToken(token) {
   }
 }
 
+// Signing out cancels the access token it was sent with, so it stops working at
+// once instead of when it expires. Cancelled tokens are kept in Redis until then.
+const revokedKey = (jti) => `revoked-at:${jti}`;
+
+async function revokeAccessToken(payload) {
+  const ttl = Math.ceil(payload.exp - Date.now() / 1000);
+  if (!payload.jti || ttl <= 0) return;
+  await redis.set(revokedKey(payload.jti), '1', 'EX', ttl);
+}
+
+// Redis being briefly unreachable shouldn't sign everyone out, so a failed check
+// is logged and treated as not revoked. Tokens still expire within minutes.
+async function isAccessTokenRevoked(jti) {
+  if (!jti) return false;
+  try {
+    return Boolean(await redis.exists(revokedKey(jti)));
+  } catch (err) {
+    logger.warn({ err: err.message }, 'revoked token check failed');
+    return false;
+  }
+}
+
 async function createSession(userId, meta, family = randomToken(16)) {
   const token = randomToken();
   await Session.create({
@@ -47,12 +72,12 @@ async function createSession(userId, meta, family = randomToken(16)) {
     userAgent: (meta.userAgent || '').slice(0, 256),
     ip: (meta.ip || '').slice(0, 64),
   });
-  return token;
+  return { token, family };
 }
 
 /**
  * Atomically consumes a refresh token and issues its successor. Returns
- * { userId, token }. Replaying an already-rotated token revokes every session
+ * { userId, token, family }. Replaying an already-rotated token revokes every session
  * in its family.
  */
 async function rotateSession(rawToken, meta) {
@@ -82,8 +107,8 @@ async function rotateSession(rawToken, meta) {
     throw AppError.unauthorized('Session expired', 'REFRESH_INVALID');
   }
 
-  const token = await createSession(consumed.user, meta, consumed.family);
-  return { userId: consumed.user, token };
+  const { token } = await createSession(consumed.user, meta, consumed.family);
+  return { userId: consumed.user, token, family: consumed.family };
 }
 
 async function revokeSession(rawToken) {
@@ -101,6 +126,8 @@ async function revokeAllSessions(userId) {
 module.exports = {
   signAccessToken,
   verifyAccessToken,
+  revokeAccessToken,
+  isAccessTokenRevoked,
   createSession,
   rotateSession,
   revokeSession,

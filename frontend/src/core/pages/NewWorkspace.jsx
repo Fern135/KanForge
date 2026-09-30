@@ -51,7 +51,7 @@ export default function NewWorkspace() {
       <h1 className="h4 fw-bold text-primary mb-1">{first ? 'Create your workspace' : 'Create a workspace'}</h1>
       <p className="text-muted mb-4">
         A workspace holds your team&apos;s boards, notes and documents.
-        {first && ' If your team already has one, ask one of its admins to add you using the email you signed up with.'}
+        {first && ' If your team already has one, ask one of its admins for an invite link.'}
       </p>
       <form className="card border-0 shadow-sm" onSubmit={submit}>
         <div className="card-body">

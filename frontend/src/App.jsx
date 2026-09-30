@@ -8,7 +8,7 @@ import Login from './core/pages/Login';
 import Register from './core/pages/Register';
 import { APPS } from './apps';
 import {
-  WORKSPACE_SLUG, goTo, isWorkspacePath, lastWorkspace, workspaceUrl,
+  WORKSPACE_SLUG, goTo, isInvitePath, isWorkspacePath, lastWorkspace, workspaceUrl,
 } from './core/workspaceUrl';
 
 // Everything behind sign-in is split into its own chunk so the first paint stays
@@ -18,6 +18,7 @@ const Account = lazy(() => import('./core/pages/Account'));
 const Admin = lazy(() => import('./core/pages/Admin'));
 const NewWorkspace = lazy(() => import('./core/pages/NewWorkspace'));
 const WorkspaceSettings = lazy(() => import('./core/pages/WorkspaceSettings'));
+const JoinWorkspace = lazy(() => import('./core/pages/JoinWorkspace'));
 
 // A full page load to a path under /app, outside the current workspace.
 function Leave({ to }) {
@@ -31,9 +32,9 @@ function Protected({ children }) {
   if (status === 'loading') return <Spinner fullscreen />;
   if (status !== 'authed') {
     // Come back to this page after signing in.
-    return WORKSPACE_SLUG
-      ? <Leave to={`/login?next=${encodeURIComponent(window.location.pathname + location.search)}`} />
-      : <Navigate to="/login" replace />;
+    const next = `?next=${encodeURIComponent(window.location.pathname + location.search + location.hash)}`;
+    if (WORKSPACE_SLUG) return <Leave to={`/login${next}`} />;
+    return <Navigate to={`/login${location.pathname === '/' ? '' : next}`} replace />;
   }
   return (
     <>
@@ -64,7 +65,7 @@ function WorkspaceGate({ children }) {
     return (
       <main className="container py-5 text-center">
         <h1 className="h5 fw-bold">Workspace not found</h1>
-        <p className="text-muted">It doesn&apos;t exist, or you&apos;re not a member. Ask one of its admins to add you.</p>
+        <p className="text-muted">It doesn&apos;t exist, or you&apos;re not a member. Ask one of its admins for an invite link.</p>
         <a href="/app/" className="btn btn-primary">Go to your workspaces</a>
       </main>
     );
@@ -108,6 +109,8 @@ function ChooseWorkspace() {
   const location = useLocation();
   const next = new URLSearchParams(location.search).get('next');
   const target = (() => {
+    // Signed in (or up) from an invite link: back to it, whether or not they have a workspace yet.
+    if (isInvitePath(next)) return next;
     if (!workspaces?.length) return null;
     if (isWorkspacePath(next)) return next;
     const last = workspaces.find((w) => w.slug === lastWorkspace());
@@ -150,6 +153,7 @@ function AccountRoutes() {
       <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
       <Route path="/" element={<Protected><ChooseWorkspace /></Protected>} />
       <Route path="/new" element={<Protected><NewWorkspace /></Protected>} />
+      <Route path="/invite" element={<Protected><JoinWorkspace /></Protected>} />
       <Route path="/account" element={<Protected><Account /></Protected>} />
       <Route path="/admin" element={<Protected><AdminOnly><Admin /></AdminOnly></Protected>} />
       {[...APPS.map((a) => a.id), 'b'].map((id) => (

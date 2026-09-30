@@ -31,14 +31,23 @@ export const workspaceApi = {
   get: () => data(api.get('/workspace')),
   rename: (name) => data(api.patch('/workspace', { name })),
   members: () => data(api.get('/workspace/members')),
-  addMember: (email, role) => data(api.post('/workspace/members', { email, role })),
   setRole: (userId, role) => data(api.patch(`/workspace/members/${encodeURIComponent(userId)}`, { role })),
   removeMember: (userId) => api.delete(`/workspace/members/${encodeURIComponent(userId)}`),
   setAppEnabled: (id, enabled) => data(api.patch(`/workspace/apps/${encodeURIComponent(id)}`, { enabled })),
+  invites: () => data(api.get('/workspace/invites')),
+  createInvite: (body) => data(api.post('/workspace/invites', body)),
+  revokeInvite: (id) => api.delete(`/workspace/invites/${encodeURIComponent(id)}`),
+};
+
+// Opening and accepting an invite link (outside any workspace).
+export const invitesApi = {
+  preview: (token) => data(api.post('/invites/preview', { token })),
+  accept: (token) => data(api.post('/invites/accept', { token })),
 };
 
 // Platform admins: the whole server.
 export const adminApi = {
+  confirm: (password) => api.post('/admin/confirm', { password }),
   users: () => data(api.get('/admin/users')),
   setRole: (userId, role) => data(api.patch(`/admin/users/${encodeURIComponent(userId)}`, { role })),
   workspaces: () => data(api.get('/admin/workspaces')),

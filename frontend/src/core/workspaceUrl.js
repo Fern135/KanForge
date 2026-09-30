@@ -18,6 +18,12 @@ export const goTo = (url) => window.location.assign(url);
 // Only same-site workspace paths are accepted as a post-sign-in destination.
 export const isWorkspacePath = (url) => typeof url === 'string' && WORKSPACE_PATH.test(url);
 
+// An invite link: /app/invite#<token>. The token stays in the #fragment, which
+// browsers never send to the server, so it stays out of access logs.
+const INVITE_PATH = /^\/app\/invite#[A-Za-z0-9_-]{32}$/;
+export const isInvitePath = (url) => typeof url === 'string' && INVITE_PATH.test(url);
+export const inviteUrl = (token) => `${window.location.origin}/app/invite#${token}`;
+
 const LAST_KEY = 'kanforge.lastWorkspace';
 
 export function rememberWorkspace(slug) {

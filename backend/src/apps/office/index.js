@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { limiter, perUser, READS } = require('../../core/middleware/rateLimit');
+const { searchLimiter } = require('../../core/services/search');
 const documentsRouter = require('./documents');
 const folders = require('./folders');
 const { imagesRouter } = require('./images');
@@ -38,10 +39,11 @@ module.exports = {
         keyGenerator: perUser,
         message: 'Too many uploads. Try again in a few minutes.',
       }),
+      search: searchLimiter('office-search'),
     };
     const router = express.Router();
     router.use(own.writes);
-    router.use('/documents', documentsRouter());
+    router.use('/documents', documentsRouter(own));
     router.use('/folders', folders.router());
     router.use('/images', imagesRouter({ ...limiters, ...own }));
     return router;

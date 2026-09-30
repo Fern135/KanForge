@@ -8,7 +8,7 @@ const Board = require('../src/apps/boards/models/Board');
 const Note = require('../src/apps/notes/models/Note');
 const Workspace = require('../src/core/models/Workspace');
 const { runInWorkspace } = require('../src/core/tenancy');
-const { setup, teardown, api, registerUser, auth, migrations } = require('./helpers');
+const { setup, teardown, api, registerUser, auth, joinWorkspace, migrations } = require('./helpers');
 
 describe('workspaces and tenant isolation', () => {
   let alice;
@@ -85,7 +85,7 @@ describe('workspaces and tenant isolation', () => {
     assert.equal(outsider.status, 404);
     assert.deepEqual(outsider.body, unknown.body);
 
-    await as(alice, 'acme').post('/api/workspace/members').send({ email: bob.email }).expect(201);
+    await joinWorkspace(alice, 'acme', bob);
     await as(alice, 'acme').post(`/api/boards/${board.id}/members`).send({ email: bob.email }).expect(201);
     await as(bob, 'acme').get(`/api/boards/${board.id}`).expect(200);
   });
@@ -94,11 +94,8 @@ describe('workspaces and tenant isolation', () => {
     const members = (await as(bob, 'acme').get('/api/workspace/members').expect(200)).body.members;
     assert.deepEqual(members.map((m) => [m.name, m.role]), [['Alice', 'admin'], ['Bob', 'member']]);
 
-    await as(bob, 'acme').post('/api/workspace/members').send({ email: carol.email }).expect(403);
+    await as(bob, 'acme').post('/api/workspace/invites').send({}).expect(403);
     await as(bob, 'acme').patch('/api/workspace').send({ name: 'Mine now' }).expect(403);
-    await as(alice, 'acme').post('/api/workspace/members').send({ email: bob.email }).expect(409);
-    const unknown = await as(alice, 'acme').post('/api/workspace/members').send({ email: 'nobody@test.dev' });
-    assert.equal(unknown.body.error.code, 'USER_NOT_FOUND');
 
     const last = await as(alice, 'acme').patch(`/api/workspace/members/${alice.user.id}`).send({ role: 'member' });
     assert.equal(last.body.error.code, 'LAST_ADMIN');
@@ -110,7 +107,7 @@ describe('workspaces and tenant isolation', () => {
   });
 
   it('removes access at once and hands owned boards to the admin', async () => {
-    await as(alice, 'acme').post('/api/workspace/members').send({ email: carol.email }).expect(201);
+    await joinWorkspace(alice, 'acme', carol);
     const { board } = (await as(carol, 'acme').post('/api/boards').send({ title: "Carol's" }).expect(201)).body;
 
     await as(bob, 'acme').del(`/api/workspace/members/${carol.user.id}`).expect(403);
@@ -175,9 +172,10 @@ describe('workspaces and tenant isolation', () => {
   it('moves an existing install into one "Main" workspace', async () => {
     // An install as it was before workspaces existed.
     const db = mongoose.connection.db;
-    const workspacesMigration = migrations.at(-1);
+    const index = migrations.findIndex((m) => m === require('../migrations/20261001000001-workspaces'));
+    const workspacesMigration = migrations[index];
     await db.dropDatabase();
-    for (const m of migrations.slice(0, -1)) await m.up(db);
+    for (const m of migrations.slice(0, index)) await m.up(db);
     await db.collection('settings').updateOne({ _id: 'instance' }, { $set: { apps: { office: false } } }, { upsert: true });
 
     const now = new Date();

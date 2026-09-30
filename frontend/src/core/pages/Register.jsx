@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEnvelope, faLock, faUser } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +22,8 @@ const LEVELS = [
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  // Keeps ?next=, so an invite link still works after signing up.
+  const { search } = useLocation();
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -36,7 +38,7 @@ export default function Register() {
     setError('');
     try {
       await register({ name: form.name.trim(), email: form.email, password: form.password });
-      navigate('/', { replace: true });
+      navigate(`/${search}`, { replace: true });
     } catch (err) {
       setError(errorMessage(err, 'Could not create account'));
     } finally {
@@ -81,7 +83,7 @@ export default function Register() {
           {busy ? <span className="spinner-border spinner-border-sm" /> : 'Create account'}
         </button>
         <p className="text-center text-muted mt-4 mb-0">
-          Already have an account? <Link to="/login" className="fw-semibold">Sign in</Link>
+          Already have an account? <Link to={`/login${search}`} className="fw-semibold">Sign in</Link>
         </p>
       </form>
     </AuthLayout>

@@ -76,18 +76,23 @@ module.exports = function boardsRouter(limiters) {
 
   router.post('/', body(createSchema), async (req, res) => {
     const max = maxBoards(req);
-    if (max && (await boardCount(req.user.id)) >= max) {
-      throw AppError.badRequest(
-        `You're on ${max} boards, the most your plan allows. Delete or leave a board to create a new one.`,
-        'LIMIT',
-      );
-    }
+    const atLimit = () => AppError.badRequest(
+      `You're on ${max} boards, the most your plan allows. Delete or leave a board to create a new one.`,
+      'LIMIT',
+    );
+    if (max && (await boardCount(req.user.id)) >= max) throw atLimit();
     const board = await Board.create({
       title: req.body.title,
       background: req.body.background || 'navy',
       members: [{ user: req.user.id, role: 'owner' }],
       labels: DEFAULT_LABELS,
     });
+    // Counted again: requests running at the same moment can all pass the check
+    // above. If together they went over, this board is undone.
+    if (max && (await boardCount(req.user.id)) > max) {
+      await Board.deleteOne({ _id: board._id });
+      throw atLimit();
+    }
     res.status(201).json({ board: s.boardSummary(board.toObject(), req.user.id) });
   });
 
@@ -146,6 +151,14 @@ module.exports = function boardsRouter(limiters) {
       { $push: { members: { user: user._id, role: 'member' } } },
     );
     if (!updated.modifiedCount) throw AppError.conflict('Could not add member', 'MEMBER_ADD_FAILED');
+    // Counted again, in case invites to other boards landed at the same moment.
+    if (max && (await boardCount(user._id)) > max) {
+      await Board.updateOne({ _id: req.board._id }, { $pull: { members: { user: user._id } } });
+      throw AppError.conflict(
+        `That person is already on ${max} boards, the most your plan allows. They need to leave one first.`,
+        'MEMBER_BOARD_LIMIT',
+      );
+    }
     await cache.invalidateBoard(req.board._id);
     res.status(201).json({ member: { id: String(user._id), name: user.name, email: user.email, role: 'member' } });
   });
