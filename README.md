@@ -196,6 +196,7 @@ On macOS and Linux, use `./run.sh <command>`. On Windows, use `.\run <command>`.
 | `down` | Stop everything. Your data is kept |
 | `status` | Show which containers are running and healthy |
 | `logs [service]` | Follow the logs, for example `logs api`. Press Ctrl+C to stop |
+| `admin <email>` | Make an existing account the super admin (platform admin), for example `admin you@example.com`. Sign up in the app first. With make: `make admin email=you@example.com` |
 | `seed` | Add a demo user and sample board (prints the login) |
 | `migrate [up\|down\|status]` | Apply, roll back or list database migrations |
 | `test` | Run the backend test suite against an isolated test database |
