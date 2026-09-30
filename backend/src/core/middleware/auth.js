@@ -1,6 +1,8 @@
 'use strict';
 
 const User = require('../models/User');
+const { redis } = require('../db/redis');
+const logger = require('../utils/logger');
 const cache = require('../services/cache');
 const { verifyAccessToken, isAccessTokenRevoked } = require('../services/tokens');
 const AppError = require('../utils/AppError');
@@ -21,6 +23,14 @@ async function loadUser(id) {
   return slim;
 }
 
+// Records when an account was last active, at most once an hour, for the
+// platform stats. Never holds up or fails the request.
+function markActive(userId) {
+  redis.set(`seen:${userId}`, '1', 'EX', 3600, 'NX')
+    .then((fresh) => fresh && User.updateOne({ _id: userId }, { $set: { lastActiveAt: new Date() } }))
+    .catch((err) => logger.warn({ err: err.message }, 'could not record activity'));
+}
+
 // Requires a valid Bearer access token. The token only travels in a header,
 // never in a cookie, so these routes can't be CSRF'd.
 async function requireAuth(req, _res, next) {
@@ -37,6 +47,7 @@ async function requireAuth(req, _res, next) {
     throw AppError.unauthorized('Session revoked', 'TOKEN_INVALID');
   }
   req.user = user;
+  markActive(user.id);
   // The sign-in session this token belongs to (see requireRecentAuth).
   req.sessionId = typeof payload.sid === 'string' ? payload.sid : null;
   next();

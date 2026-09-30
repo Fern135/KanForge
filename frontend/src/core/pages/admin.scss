@@ -1,0 +1,108 @@
+// Super admin dashboard. Chart colours come from the validated categorical
+// palette; text always uses text colours, never a series colour.
+$admin-surface: #fff;
+$admin-grid: #e6e9ee;
+$admin-ink: #1d2735;
+$admin-muted: #5f6a7a;
+
+.admin-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-tile {
+  background: $admin-surface;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px rgba(9, 30, 66, 0.12);
+  padding: 0.85rem 1rem;
+  min-width: 0;
+}
+
+.admin-tile-label {
+  color: $admin-muted;
+  font-size: 0.8rem;
+}
+
+.admin-tile-value {
+  color: $admin-ink;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-tile-note {
+  color: $admin-muted;
+  font-size: 0.75rem;
+}
+
+.admin-chart {
+  position: relative;
+  width: 100%;
+
+  svg { display: block; }
+}
+
+.admin-grid {
+  stroke: $admin-grid;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.admin-axis {
+  fill: $admin-muted;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-value {
+  fill: $admin-ink;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.admin-tooltip {
+  position: absolute;
+  width: 150px;
+  pointer-events: none;
+  background: $admin-surface;
+  border: 1px solid $admin-grid;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 12px rgba(9, 30, 66, 0.15);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+// Seats by plan: one bar, with a 2px surface gap between plans.
+.admin-stack {
+  display: flex;
+  gap: 2px;
+  height: 20px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+
+  > div { min-width: 4px; }
+}
+
+.admin-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 0.5rem;
+  vertical-align: baseline;
+}
+
+.admin-table {
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+
+  th { color: $admin-muted; font-weight: 600; font-size: 0.75rem; white-space: nowrap; }
+}
+
+.admin-workspaces {
+  max-height: 420px;
+  overflow-y: auto;
+}

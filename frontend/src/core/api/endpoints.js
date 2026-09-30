@@ -48,8 +48,10 @@ export const invitesApi = {
 // Platform admins: the whole server.
 export const adminApi = {
   confirm: (password) => api.post('/admin/confirm', { password }),
-  users: () => data(api.get('/admin/users')),
-  setRole: (userId, role) => data(api.patch(`/admin/users/${encodeURIComponent(userId)}`, { role })),
+  stats: () => data(api.get('/admin/stats')),
   workspaces: () => data(api.get('/admin/workspaces')),
   updateWorkspace: (id, body) => data(api.patch(`/admin/workspaces/${encodeURIComponent(id)}`, body)),
+  admins: () => data(api.get('/admin/admins')),
+  addAdmin: (email) => data(api.post('/admin/admins', { email })),
+  removeAdmin: (id) => api.delete(`/admin/admins/${encodeURIComponent(id)}`),
 };

@@ -18,6 +18,9 @@ const userSchema = new Schema(
       default: undefined,
       select: false,
     },
+    // When the account last used the app (updated at most once an hour), for the
+    // platform stats.
+    lastActiveAt: { type: Date },
     // Bumped on password change / "log out everywhere" to invalidate outstanding access tokens.
     tokenVersion: { type: Number, default: 0 },
   },

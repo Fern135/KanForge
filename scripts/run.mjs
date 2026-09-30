@@ -8,6 +8,7 @@
 //   node scripts/run.mjs status
 //   node scripts/run.mjs seed     demo user + sample board
 //   node scripts/run.mjs admin <email>   make an account platform admin
+//   node scripts/run.mjs demo [remove]   made-up accounts for the admin dashboard
 //   node scripts/run.mjs migrate [up|down|status]
 //   node scripts/run.mjs test     backend test suite (isolated test database)
 //   node scripts/run.mjs setup    only generate .env and the TLS certificate
@@ -179,6 +180,15 @@ const commands = {
     docker([...PROD, 'run', '--rm', '--build', '--entrypoint', 'node', 'migrate', 'scripts/make-admin.js', email]);
   },
 
+  // Made-up accounts and workspaces for the super admin dashboard (dev database).
+  demo(action) {
+    if (action && action !== 'remove') fail('Usage: demo [remove]');
+    requireDocker();
+    setup();
+    docker([...DEV, 'up', '-d', '--wait', 'mongo', 'redis']);
+    docker([...DEV, 'run', '--rm', '--build', '--no-deps', 'api', 'node', 'scripts/demo-data.js', ...(action ? [action] : [])]);
+  },
+
   migrate(action = 'up') {
     if (!['up', 'down', 'status'].includes(action)) fail('Usage: migrate [up|down|status]');
     requireDocker();
@@ -207,6 +217,7 @@ ${bold('Usage:')} node scripts/run.mjs <command>   (or ./run.sh <command>, or .\
   ${bold('status')}          Show container status
   ${bold('admin')} <email>   Make an existing account platform admin
   ${bold('seed')}            Add a demo user and sample board (prints the login)
+  ${bold('demo')} [remove]   Add (or remove) made-up accounts and workspaces for the admin dashboard
   ${bold('migrate')} [up|down|status]  Apply, roll back or list database migrations
   ${bold('test')}            Run the backend test suite (isolated test database)
   ${bold('setup')}           Only generate .env secrets and the TLS certificate

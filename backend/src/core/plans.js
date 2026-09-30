@@ -11,6 +11,9 @@ const PLANS = Object.freeze({
 });
 
 const PLAN_IDS = Object.keys(PLANS);
+// Plans the platform dashboard reports on. Self-hosted workspaces are private:
+// they're left out of the dashboard's lists, totals and revenue.
+const PAID_PLAN_IDS = PLAN_IDS.filter((id) => id !== 'self-hosted');
 
 const planOf = (id) => PLANS[id] || PLANS.standard;
 const planIncludesApp = (planId, appId) => {
@@ -18,4 +21,4 @@ const planIncludesApp = (planId, appId) => {
   return apps === null || apps.includes(appId);
 };
 
-module.exports = { PLANS, PLAN_IDS, planOf, planIncludesApp };
+module.exports = { PLANS, PLAN_IDS, PAID_PLAN_IDS, planOf, planIncludesApp };

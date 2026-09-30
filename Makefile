@@ -11,7 +11,7 @@ BACKUP_DIR   := backups
 
 .PHONY: help setup build up down restart logs ps status dev dev-down \
         migrate migrate-down migrate-status migrate-create seed \
-        test audit shell-api mongo-shell redis-cli backup restore clean certs rotate-jwt admin
+        test audit shell-api mongo-shell redis-cli backup restore clean certs rotate-jwt admin demo demo-remove
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage: make \033[36m<target>\033[0m\n\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
@@ -73,6 +73,14 @@ admin: ## Make an existing account platform admin: make admin email=you@example.
 	@test -n "$(email)" || (echo "usage: make admin email=<the email you signed up with>" && exit 1)
 	$(COMPOSE) up -d --wait mongo redis
 	$(COMPOSE) run --rm --build --entrypoint node migrate scripts/make-admin.js '$(email)'
+
+demo: ## Add made-up accounts and workspaces for the admin dashboard (dev database)
+	$(COMPOSE_DEV) up -d --wait mongo redis
+	$(COMPOSE_DEV) run --rm --build --no-deps api node scripts/demo-data.js
+
+demo-remove: ## Remove the made-up accounts and workspaces added by make demo
+	$(COMPOSE_DEV) up -d --wait mongo redis
+	$(COMPOSE_DEV) run --rm --build --no-deps api node scripts/demo-data.js remove
 
 seed: ## Insert a demo user and sample board (prints the credentials)
 	$(COMPOSE) up -d --wait mongo

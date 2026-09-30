@@ -198,6 +198,7 @@ On macOS and Linux, use `./run.sh <command>`. On Windows, use `.\run <command>`.
 | `logs [service]` | Follow the logs, for example `logs api`. Press Ctrl+C to stop |
 | `admin <email>` | Make an existing account the super admin (platform admin), for example `admin you@example.com`. Sign up in the app first. With make: `make admin email=you@example.com` |
 | `seed` | Add a demo user and sample board (prints the login) |
+| `demo [remove]` | Fill the dev database with made-up accounts and workspaces for the super admin dashboard, or remove them again. They can't sign in |
 | `migrate [up\|down\|status]` | Apply, roll back or list database migrations |
 | `test` | Run the backend test suite against an isolated test database |
 | `setup` | Only generate `.env` and the TLS certificate |
