@@ -98,7 +98,7 @@ function currentWorkspaceRouter({ limiters, appState }) {
     const before = await Membership.findOneAndUpdate(
       { workspace: ws(req), user: req.params.userId },
       { $set: { role: req.body.role } },
-      { new: false },
+      { returnDocument: 'before' },
     ).lean();
     if (!before) throw AppError.notFound('Member not found');
     // Checking after the write (and undoing it) stays correct when two admins demote each other at once.

@@ -69,7 +69,7 @@ module.exports = function adminRouter({ limiters }) {
   });
 
   router.patch('/workspaces/:workspaceId', limiters.sensitive, requireRecentAuth, ids('workspaceId'), body(workspaceSchema), async (req, res) => {
-    const ws = await Workspace.findOneAndUpdate({ _id: req.params.workspaceId, plan: trusted({ $in: PAID_PLAN_IDS }) }, { $set: req.body }, { new: true })
+    const ws = await Workspace.findOneAndUpdate({ _id: req.params.workspaceId, plan: trusted({ $in: PAID_PLAN_IDS }) }, { $set: req.body }, { returnDocument: 'after' })
       .select('name slug plan createdAt').lean();
     if (!ws) throw AppError.notFound('Workspace not found');
     audit(req, 'admin.plan_changed', { target: String(ws._id), plan: ws.plan });

@@ -219,7 +219,7 @@ module.exports = function notesRouter(limiters) {
     if (editsText) filter.version = version;
     const update = editsText ? { $set: set, $inc: { version: 1 } } : { $set: set };
 
-    const note = await Note.findOneAndUpdate(filter, update, { new: true }).lean();
+    const note = await Note.findOneAndUpdate(filter, update, { returnDocument: 'after' }).lean();
     if (!note) throw AppError.conflict('This note was changed somewhere else', 'VERSION_CONFLICT');
     res.json({ note: full(note) });
   });
@@ -228,7 +228,7 @@ module.exports = function notesRouter(limiters) {
     const note = await Note.findOneAndUpdate(
       mine(req, { _id: req.params.noteId, trashedAt: null }),
       { $set: { trashedAt: new Date(), pinned: false } },
-      { new: true },
+      { returnDocument: 'after' },
     ).lean();
     if (!note) throw AppError.notFound('Note not found');
     res.json({ note: summary(note) });
@@ -241,7 +241,7 @@ module.exports = function notesRouter(limiters) {
     const note = await Note.findOneAndUpdate(
       mine(req, { _id: req.params.noteId, trashedAt: trusted({ $ne: null }) }),
       { $set: folderGone ? { trashedAt: null, folder: null } : { trashedAt: null } },
-      { new: true },
+      { returnDocument: 'after' },
     ).lean();
     if (!note) throw AppError.notFound('Note not found');
     res.json({ note: summary(note) });

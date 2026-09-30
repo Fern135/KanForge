@@ -110,7 +110,7 @@ module.exports = function boardsRouter(limiters) {
   });
 
   router.patch('/:boardId', body(updateSchema), async (req, res) => {
-    const board = await Board.findByIdAndUpdate(req.board._id, { $set: req.body }, { new: true, runValidators: true }).lean();
+    const board = await Board.findByIdAndUpdate(req.board._id, { $set: req.body }, { returnDocument: 'after', runValidators: true }).lean();
     await cache.invalidateBoard(board._id);
     res.json({ board: s.boardSummary(board, req.user.id) });
   });
@@ -180,7 +180,7 @@ module.exports = function boardsRouter(limiters) {
     const board = await Board.findOneAndUpdate(
       { _id: req.board._id, 'labels.29': trusted({ $exists: false }) },
       { $push: { labels: req.body } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).lean();
     if (!board) throw AppError.badRequest('Label limit reached', 'LIMIT');
     await cache.invalidateBoard(req.board._id);
@@ -194,7 +194,7 @@ module.exports = function boardsRouter(limiters) {
     const board = await Board.findOneAndUpdate(
       { _id: req.board._id, 'labels._id': req.params.labelId },
       { $set: set },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).lean();
     if (!board) throw AppError.notFound('Label not found');
     await cache.invalidateBoard(req.board._id);

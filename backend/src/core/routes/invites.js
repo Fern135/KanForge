@@ -115,7 +115,7 @@ function invitesRouter({ limiters }) {
       return res.json({ workspace: workspaces.summary(ws, m.role) });
     }
     // Counts the use atomically, so a link can't be used more times than it allows.
-    const invite = await Invite.findOneAndUpdate(usable({ tokenHash: tokenHash(req) }), { $inc: { uses: 1 } }, { new: true }).lean();
+    const invite = await Invite.findOneAndUpdate(usable({ tokenHash: tokenHash(req) }), { $inc: { uses: 1 } }, { returnDocument: 'after' }).lean();
     if (!invite) throw invalid();
     try {
       await Membership.create({ workspace: ws._id, user: req.user.id, role: invite.role });

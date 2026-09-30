@@ -10,7 +10,7 @@ const cache = require('../src/core/services/cache');
 async function makeAdmin(rawEmail) {
   const email = String(rawEmail || '').trim().toLowerCase();
   if (!email) throw new Error('Usage: make admin email=you@example.com');
-  const user = await User.findOneAndUpdate({ email }, { $set: { role: 'admin' } }, { new: true }).select('email name role').lean();
+  const user = await User.findOneAndUpdate({ email }, { $set: { role: 'admin' } }, { returnDocument: 'after' }).select('email name role').lean();
   if (!user) throw new Error(`No account uses ${email}. Sign up in the app first, then run this again.`);
   await cache.invalidateUser(String(user._id));
   return user;

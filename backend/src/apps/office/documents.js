@@ -201,7 +201,7 @@ module.exports = function documentsRouter({ search }) {
     if (edits) filter.version = version;
     const update = edits ? { $set: set, $inc: { version: 1 } } : { $set: set };
 
-    const doc = await OfficeDocument.findOneAndUpdate(filter, update, { new: true }).lean();
+    const doc = await OfficeDocument.findOneAndUpdate(filter, update, { returnDocument: 'after' }).lean();
     if (!doc) throw AppError.conflict('This document was changed somewhere else', 'VERSION_CONFLICT');
     res.json({ document: full(doc) });
   });
@@ -229,7 +229,7 @@ module.exports = function documentsRouter({ search }) {
     const doc = await OfficeDocument.findOneAndUpdate(
       mine(req, { _id: req.params.docId, trashedAt: null }),
       { $set: { trashedAt: new Date() } },
-      { new: true },
+      { returnDocument: 'after' },
     ).lean();
     if (!doc) throw AppError.notFound('Document not found');
     res.json({ document: summary(doc) });
@@ -242,7 +242,7 @@ module.exports = function documentsRouter({ search }) {
     const doc = await OfficeDocument.findOneAndUpdate(
       mine(req, { _id: req.params.docId, trashedAt: trusted({ $ne: null }) }),
       { $set: folderGone ? { trashedAt: null, folder: null } : { trashedAt: null } },
-      { new: true },
+      { returnDocument: 'after' },
     ).lean();
     if (!doc) throw AppError.notFound('Document not found');
     res.json({ document: summary(doc) });

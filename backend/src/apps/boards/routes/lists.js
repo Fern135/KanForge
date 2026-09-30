@@ -49,14 +49,14 @@ module.exports = function listsRouter() {
   router.use('/:listId', ids('listId'), loadList);
 
   router.patch('/:listId', body(updateSchema), async (req, res) => {
-    const list = await List.findByIdAndUpdate(req.list._id, { $set: { title: req.body.title } }, { new: true }).lean();
+    const list = await List.findByIdAndUpdate(req.list._id, { $set: { title: req.body.title } }, { returnDocument: 'after' }).lean();
     await cache.invalidateBoard(req.board._id);
     res.json({ list: s.list(list) });
   });
 
   router.put('/:listId/move', body(moveSchema), async (req, res) => {
     const position = await positionAt(List, { board: req.board._id }, req.body.index, req.list._id);
-    const list = await List.findByIdAndUpdate(req.list._id, { $set: { position } }, { new: true }).lean();
+    const list = await List.findByIdAndUpdate(req.list._id, { $set: { position } }, { returnDocument: 'after' }).lean();
     await cache.invalidateBoard(req.board._id);
     res.json({ list: s.list(list) });
   });

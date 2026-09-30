@@ -262,7 +262,7 @@ module.exports = function authRouter(limiters) {
   });
 
   router.patch('/me', limiters.sensitive, requireAuth, body(profileSchema), async (req, res) => {
-    const user = await User.findByIdAndUpdate(req.user.id, { $set: { name: req.body.name } }, { new: true });
+    const user = await User.findByIdAndUpdate(req.user.id, { $set: { name: req.body.name } }, { returnDocument: 'after' });
     await cache.invalidateUser(req.user.id);
     // Apps may cache the name elsewhere (Boards embeds member names in board payloads).
     await events.emit('user.renamed', req.user.id);

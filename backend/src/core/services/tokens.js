@@ -90,7 +90,7 @@ async function rotateSession(rawToken, meta) {
   const consumed = await Session.findOneAndUpdate(
     { tokenHash, revokedAt: null, expiresAt: trusted({ $gt: now }) },
     { $set: { revokedAt: now } },
-    { new: false },
+    { returnDocument: 'before' },
   ).lean();
 
   if (!consumed) {

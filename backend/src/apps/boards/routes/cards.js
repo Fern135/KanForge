@@ -137,7 +137,7 @@ module.exports = function cardsRouter(limiters) {
     const update = { ...req.body };
     if (update.labels) update.labels = boardLabels(req.board, update.labels);
     if (update.dueDate !== undefined) update.dueDate = update.dueDate ? new Date(update.dueDate) : null;
-    const card = await Card.findByIdAndUpdate(req.card._id, { $set: update }, { new: true, runValidators: true }).lean();
+    const card = await Card.findByIdAndUpdate(req.card._id, { $set: update }, { returnDocument: 'after', runValidators: true }).lean();
     await done(req, res, card);
   });
 
@@ -150,7 +150,7 @@ module.exports = function cardsRouter(limiters) {
       }
     }
     const position = await positionAt(Card, { list: listId }, req.body.index, req.card._id);
-    const card = await Card.findByIdAndUpdate(req.card._id, { $set: { list: listId, position } }, { new: true }).lean();
+    const card = await Card.findByIdAndUpdate(req.card._id, { $set: { list: listId, position } }, { returnDocument: 'after' }).lean();
     if (listId !== String(req.card.list) && (await overfull(listId))) {
       await Card.updateOne({ _id: req.card._id }, { $set: { list: req.card.list, position: req.card.position } });
       throw listFull();
@@ -170,7 +170,7 @@ module.exports = function cardsRouter(limiters) {
     const card = await Card.findOneAndUpdate(
       { _id: req.card._id, [`checklist.${MAX_CHECKLIST - 1}`]: trusted({ $exists: false }) },
       { $push: { checklist: { text: req.body.text } } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).lean();
     if (!card) throw AppError.badRequest('Checklist limit reached', 'LIMIT');
     await done(req, res, card, 201);
@@ -182,7 +182,7 @@ module.exports = function cardsRouter(limiters) {
     const card = await Card.findOneAndUpdate(
       { _id: req.card._id, [`checklist.${MAX_CHECKLIST - items.length}`]: trusted({ $exists: false }) },
       { $push: { checklist: { $each: items.map((i) => ({ text: i.text, done: Boolean(i.done) })) } } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).lean();
     if (!card) throw AppError.badRequest(`A checklist can hold at most ${MAX_CHECKLIST} items`, 'LIMIT');
     await done(req, res, card, 201);
@@ -195,7 +195,7 @@ module.exports = function cardsRouter(limiters) {
     const card = await Card.findOneAndUpdate(
       { _id: req.card._id, 'checklist._id': req.params.itemId },
       { $set: set },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).lean();
     if (!card) throw AppError.notFound('Checklist item not found');
     await done(req, res, card);
@@ -205,7 +205,7 @@ module.exports = function cardsRouter(limiters) {
     const card = await Card.findOneAndUpdate(
       { _id: req.card._id },
       { $pull: { checklist: { _id: req.params.itemId } } },
-      { new: true },
+      { returnDocument: 'after' },
     ).lean();
     await done(req, res, card);
   });

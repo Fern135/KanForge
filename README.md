@@ -132,7 +132,7 @@
 - Regularly security-audited, with every workspace kept private to its members. See [Security](#security)
 
 **Stack:**
-- Node.js 22 (Express 5), MongoDB 8.2, Redis 7
+- Node.js 24 (Express 5), MongoDB 8.3, Redis 8
 - React 19 (Vite, JavaScript), Bootstrap 5, Axios, Font Awesome Free, @hello-pangea/dnd
 - Tiptap (rich-text editing), docx and mammoth (Word export and import), pptxgenjs (PowerPoint export), fflate (zip, for Excel files and Notes exports). Heavy parts load only when used
 - nginx, with everything running in Docker
