@@ -12,6 +12,9 @@ const AppError = require('../utils/AppError');
 // Two tabs refreshing at the same moment would otherwise look like token theft.
 // A token rotated within this window is rejected, but it doesn't revoke the family.
 const ROTATION_GRACE_MS = 10_000;
+// Browsers one account can be signed in on at once. Signing in on one more signs
+// out the one used least recently, so sessions can't pile up without end.
+const MAX_DEVICES = 50;
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const randomToken = (bytes = 48) => crypto.randomBytes(bytes).toString('base64url');
@@ -177,13 +180,15 @@ async function listSessions(userId, currentSid) {
 }
 
 // Signs out the browser that session `family` belongs to (every session it
-// holds). Returns 'done', 'current' (that's the browser asking) or 'missing'.
+// holds). Returns { result: 'done' | 'current' (the browser asking) | 'missing',
+// device: that browser's id hash, or null for sessions from before device ids }.
 async function signOutDevice(userId, family, currentSid) {
   const group = byDevice(await liveSessions(userId)).find((g) => g.families.includes(family));
-  if (!group) return 'missing';
-  if (group.families.includes(currentSid)) return 'current';
+  if (!group) return { result: 'missing', device: null };
+  const device = group.latest.device || null;
+  if (group.families.includes(currentSid)) return { result: 'current', device };
   await endFamilies(userId, group.families);
-  return 'done';
+  return { result: 'done', device };
 }
 
 // A browser signing in again: its earlier sessions for this account end, so it
@@ -197,6 +202,15 @@ async function replaceDeviceSessions(userId, device, userAgent = '') {
     $or: [{ device }, { device: trusted({ $exists: false }), userAgent: userAgent.slice(0, 256) }],
   });
   await endFamilies(userId, families);
+}
+
+// Makes room for one more browser: the least recently used ones beyond the
+// limit are signed out. Returns their device id hashes, so the caller can take
+// their PIN sign-in away too.
+async function trimDevices(userId) {
+  const dropped = byDevice(await liveSessions(userId)).slice(MAX_DEVICES - 1);
+  await endFamilies(userId, dropped.flatMap((g) => g.families));
+  return dropped.map((g) => g.latest.device).filter(Boolean);
 }
 
 async function revokeAllSessions(userId) {
@@ -215,6 +229,8 @@ module.exports = {
   listSessions,
   signOutDevice,
   replaceDeviceSessions,
+  trimDevices,
+  MAX_DEVICES,
   randomToken,
   sha256,
 };

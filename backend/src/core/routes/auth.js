@@ -91,28 +91,36 @@ async function dropPinDevice(req) {
   if (hash) await User.updateMany({ 'pinDevices.tokenHash': hash }, { $pull: { pinDevices: { tokenHash: hash } } });
 }
 
-// Issues a fresh device token and keeps only the most recent devices.
+// Issues a fresh device token and keeps only the most recent devices. It
+// records which browser it belongs to, so signing that browser out (Account &
+// security's device list) takes its PIN sign-in away too.
 async function rememberPinDevice(req, res, userId) {
   await dropPinDevice(req);
   const raw = tokens.randomToken(32);
-  const device = { tokenHash: tokens.sha256(raw), createdAt: new Date() };
+  const device = { tokenHash: tokens.sha256(raw), createdAt: new Date(), device: browserDevice(req, res) };
   await User.updateOne({ _id: userId }, { $push: { pinDevices: { $each: [device], $slice: -config.pinDevice.max } } });
   res.cookie(config.pinDevice.cookieName, raw, { ...pinCookieOpts(), maxAge: config.pinDevice.ttlMs });
 }
 
 // "This browser has signed in to this account before" (see services/lockout.js).
-// A MAC of the email under the server secret, so it can't be made without signing in.
-const knownDeviceValue = (mail) =>
-  crypto.createHmac('sha256', config.jwt.secret).update(`known-device:${mail}`).digest('base64url');
+// A MAC under the server secret of the email, this browser's id and the account's
+// token version: it can't be made without signing in, it only works on the
+// browser it was given to, and signing out everywhere or changing the password
+// (which bump the token version) cancels every copy.
+const knownDeviceValue = (user, browser) => crypto.createHmac('sha256', config.jwt.secret)
+  .update(`known-device:${user.email}:${user.tokenVersion}:${browser}`).digest('base64url');
 
-function isKnownDevice(req, mail) {
+// user: the account being signed in to, or null when the email has none.
+function isKnownDevice(req, user) {
   const raw = req.cookies?.[config.knownDevice.cookieName];
-  const expected = knownDeviceValue(mail);
-  return typeof raw === 'string' && raw.length === expected.length && crypto.timingSafeEqual(Buffer.from(raw), Buffer.from(expected));
+  const browser = req.cookies?.[config.browserDevice.cookieName];
+  if (!user || typeof raw !== 'string' || typeof browser !== 'string' || !SESSION_ID_RE.test(browser)) return false;
+  const expected = knownDeviceValue(user, tokens.sha256(browser));
+  return raw.length === expected.length && crypto.timingSafeEqual(Buffer.from(raw), Buffer.from(expected));
 }
 
-function rememberKnownDevice(res, mail) {
-  res.cookie(config.knownDevice.cookieName, knownDeviceValue(mail), {
+function rememberKnownDevice(req, res, user) {
+  res.cookie(config.knownDevice.cookieName, knownDeviceValue(user, browserDevice(req, res)), {
     httpOnly: true,
     secure: config.refresh.cookieSecure,
     sameSite: 'strict',
@@ -122,8 +130,10 @@ function rememberKnownDevice(res, mail) {
 }
 
 // Names this browser (a random id, not tied to any account). Only its hash is
-// stored on sessions, and it's renewed at every sign-in.
+// stored (on sessions and PIN devices), and it's renewed at every sign-in. The
+// same request always gets the same id, even before the cookie exists.
 function browserDevice(req, res) {
+  if (req.browserDeviceHash) return req.browserDeviceHash;
   let raw = req.cookies?.[config.browserDevice.cookieName];
   if (typeof raw !== 'string' || !SESSION_ID_RE.test(raw)) raw = tokens.randomToken(16);
   res.cookie(config.browserDevice.cookieName, raw, {
@@ -133,7 +143,8 @@ function browserDevice(req, res) {
     path: config.refresh.cookiePath,
     maxAge: config.browserDevice.ttlMs,
   });
-  return tokens.sha256(raw);
+  req.browserDeviceHash = tokens.sha256(raw);
+  return req.browserDeviceHash;
 }
 
 const disabledError = () => AppError.forbidden('This account has been disabled. Ask your administrator.', 'ACCOUNT_DISABLED');
@@ -148,9 +159,11 @@ async function startSession(req, res, user, status = 200) {
   // Signing in again on this browser replaces its earlier session for this account.
   const device = browserDevice(req, res);
   await tokens.replaceDeviceSessions(user._id, device, req.get('user-agent') || '');
+  const dropped = await tokens.trimDevices(user._id);
+  if (dropped.length) await User.updateOne({ _id: user._id }, { $pull: { pinDevices: { device: trusted({ $in: dropped }) } } });
   const { token: refreshToken, family } = await tokens.createSession(user._id, { ...meta(req), device });
   setAuthCookies(res, refreshToken);
-  rememberKnownDevice(res, user.email);
+  rememberKnownDevice(req, res, user);
   res.status(status).json({ user: user.toJSON(), accessToken: tokens.signAccessToken(user, family) });
 }
 
@@ -177,11 +190,11 @@ module.exports = function authRouter(limiters) {
 
   router.post('/login', limiters.auth, body(loginSchema), async (req, res) => {
     const { email: mail, password: pwd } = req.body;
-    if (await lockout.isLocked(mail, req.ip, 'password', { knownDevice: isKnownDevice(req, mail) })) {
+    const user = await User.findOne({ email: mail }).select('+passwordHash +pinHash');
+    if (await lockout.isLocked(mail, req.ip, 'password', { knownDevice: isKnownDevice(req, user) })) {
       audit(req, 'signin.locked', { method: 'password', emailHash: emailHash(mail) });
       throw AppError.tooMany('Too many failed attempts. Try again in 15 minutes.', 'LOCKED');
     }
-    const user = await User.findOne({ email: mail }).select('+passwordHash +pinHash');
     const ok = user
       ? await argon2.verify(user.passwordHash, pwd)
       : (await argon2.verify(await DUMMY_HASH_PROMISE, pwd), false);
@@ -197,8 +210,9 @@ module.exports = function authRouter(limiters) {
       user.passwordHash = await argon2.hash(pwd, ARGON_OPTS);
       await user.save();
     }
-    // With the PIN on, a password sign-in also sets up this device for PIN sign-in.
-    if (user.pinHash) await rememberPinDevice(req, res, user._id);
+    // With the PIN on, a password sign-in also sets up this device for PIN sign-in
+    // (not for a disabled account, which startSession then refuses).
+    if (user.pinHash && !user.disabled) await rememberPinDevice(req, res, user._id);
     audit(req, 'signin.succeeded', { method: 'password', user: String(user._id) });
     await startSession(req, res, user);
   });
@@ -227,7 +241,7 @@ module.exports = function authRouter(limiters) {
       clearPinDevice(res);
       throw AppError.unauthorized('This device isn\'t set up for PIN sign-in. Sign in with your password.', 'PIN_DEVICE_UNKNOWN');
     }
-    if (await lockout.isLocked(user.email, req.ip, 'pin', { knownDevice: isKnownDevice(req, user.email) })) {
+    if (await lockout.isLocked(user.email, req.ip, 'pin', { knownDevice: isKnownDevice(req, user) })) {
       audit(req, 'signin.locked', { method: 'pin', user: String(user._id) });
       throw AppError.tooMany('Too many failed attempts. Try again in 15 minutes.', 'LOCKED');
     }
@@ -293,9 +307,15 @@ module.exports = function authRouter(limiters) {
   router.delete('/sessions/:sessionId', limiters.sensitive, requireAuth, async (req, res) => {
     const { sessionId } = req.params;
     if (!SESSION_ID_RE.test(sessionId)) throw AppError.notFound('Session not found');
-    const result = await tokens.signOutDevice(req.user.id, sessionId, req.sessionId);
+    const { result, device } = await tokens.signOutDevice(req.user.id, sessionId, req.sessionId);
     if (result === 'missing') throw AppError.notFound('Session not found');
     if (result === 'current') throw AppError.badRequest('Use Sign out to end the session on this device', 'CURRENT_SESSION');
+    // Its PIN sign-in goes too. PIN devices from before they recorded their
+    // browser can't be told apart, so signing out an older session removes them all.
+    await User.updateOne(
+      { _id: req.user.id },
+      { $pull: { pinDevices: device ? { device } : { device: trusted({ $exists: false }) } } },
+    );
     audit(req, 'signout.device', { session: sessionId });
     res.status(204).end();
   });

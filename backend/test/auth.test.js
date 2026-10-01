@@ -88,11 +88,17 @@ describe('auth', () => {
     // A browser that never signed in to this account is locked out, even with the right password.
     assert.equal((await login('198.51.100.7')).body.error.code, 'LOCKED');
     // The owner's browser still gets in.
-    await login('198.51.100.8', `kd=${u.cookies.kd}`).expect(200);
+    const owner = `kd=${u.cookies.kd}; bd=${u.cookies.bd}`;
+    const back = await login('198.51.100.8', owner).expect(200);
     // Someone else's known-device cookie, or a made-up one, doesn't help.
     const other = await registerUser();
-    assert.equal((await login('198.51.100.9', `kd=${other.cookies.kd}`)).body.error.code, 'LOCKED');
-    assert.equal((await login('198.51.100.9', `kd=${'x'.repeat(43)}`)).body.error.code, 'LOCKED');
+    assert.equal((await login('198.51.100.9', `kd=${other.cookies.kd}; bd=${other.cookies.bd}`)).body.error.code, 'LOCKED');
+    assert.equal((await login('198.51.100.9', `kd=${'x'.repeat(43)}; bd=${u.cookies.bd}`)).body.error.code, 'LOCKED');
+    // It only works on the browser it was given to.
+    assert.equal((await login('198.51.100.9', `kd=${u.cookies.kd}; bd=${'y'.repeat(22)}`)).body.error.code, 'LOCKED');
+    // Signing out everywhere cancels every copy.
+    await api().post('/api/auth/logout-all').set(auth(back.body.accessToken)).expect(204);
+    assert.equal((await login('198.51.100.10', owner)).body.error.code, 'LOCKED');
     await flushRedis();
   });
 

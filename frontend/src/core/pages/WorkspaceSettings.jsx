@@ -159,6 +159,9 @@ const fmtDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 's
 // the server keeps only a hash of it.
 function Invites() {
   const toast = useToast();
+  // A platform admin limited this person's app access: they can't create links
+  // (the server refuses), so platform admins invite for them.
+  const limited = useWorkspace().appStates.some((a) => a.access && a.access !== 'edit');
   const [invites, setInvites] = useState(null);
   const [form, setForm] = useState({ role: 'member', expiresInDays: 7, maxUses: '' });
   const [created, setCreated] = useState(null);
@@ -213,24 +216,28 @@ function Invites() {
         <p className="text-muted small mb-3">
           Anyone with a link can join this workspace after signing in or creating an account. Share links privately, and revoke any you no longer need.
         </p>
-        <form className="d-flex flex-column flex-sm-row gap-2 mb-3" onSubmit={create}>
-          <label className="visually-hidden" htmlFor="invite-role">Role</label>
-          <select id="invite-role" className="form-select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-            <option value="member">Joins as member</option>
-            <option value="admin">Joins as admin</option>
-          </select>
-          <label className="visually-hidden" htmlFor="invite-expiry">Expires</label>
-          <select id="invite-expiry" className="form-select" value={form.expiresInDays}
-            onChange={(e) => setForm({ ...form, expiresInDays: Number(e.target.value) })}>
-            {EXPIRY_DAYS.map((d) => <option key={d} value={d}>Expires in {d} {d === 1 ? 'day' : 'days'}</option>)}
-          </select>
-          <label className="visually-hidden" htmlFor="invite-uses">Uses</label>
-          <select id="invite-uses" className="form-select" value={form.maxUses} onChange={(e) => setForm({ ...form, maxUses: e.target.value })}>
-            <option value="">Any number of uses</option>
-            {[1, 5, 10, 25, 100].map((n) => <option key={n} value={n}>{n === 1 ? 'One use' : `${n} uses`}</option>)}
-          </select>
-          <button type="submit" className="btn btn-primary flex-shrink-0" disabled={busy === 'create'}>Create link</button>
-        </form>
+        {limited ? (
+          <div className="alert alert-secondary small py-2">Your app access is limited, so you can&apos;t create invite links. Ask a platform admin to invite people.</div>
+        ) : (
+          <form className="d-flex flex-column flex-sm-row gap-2 mb-3" onSubmit={create}>
+            <label className="visually-hidden" htmlFor="invite-role">Role</label>
+            <select id="invite-role" className="form-select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+              <option value="member">Joins as member</option>
+              <option value="admin">Joins as admin</option>
+            </select>
+            <label className="visually-hidden" htmlFor="invite-expiry">Expires</label>
+            <select id="invite-expiry" className="form-select" value={form.expiresInDays}
+              onChange={(e) => setForm({ ...form, expiresInDays: Number(e.target.value) })}>
+              {EXPIRY_DAYS.map((d) => <option key={d} value={d}>Expires in {d} {d === 1 ? 'day' : 'days'}</option>)}
+            </select>
+            <label className="visually-hidden" htmlFor="invite-uses">Uses</label>
+            <select id="invite-uses" className="form-select" value={form.maxUses} onChange={(e) => setForm({ ...form, maxUses: e.target.value })}>
+              <option value="">Any number of uses</option>
+              {[1, 5, 10, 25, 100].map((n) => <option key={n} value={n}>{n === 1 ? 'One use' : `${n} uses`}</option>)}
+            </select>
+            <button type="submit" className="btn btn-primary flex-shrink-0" disabled={busy === 'create'}>Create link</button>
+          </form>
+        )}
         {created && (
           <div className="alert alert-success py-2 small">
             <div className="fw-semibold mb-1">Copy this link now. It won&apos;t be shown again.</div>

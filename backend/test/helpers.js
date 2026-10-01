@@ -24,6 +24,7 @@ const migrations = [
   require('../migrations/20261006000001-disabled-accounts'),
   require('../migrations/20261007000001-deletion-requests'),
   require('../migrations/20261008000001-session-devices'),
+  require('../migrations/20261009000001-pin-device-browser'),
 ];
 
 if (!config.isTest || !new URL(config.mongoUri).pathname.endsWith('_test')) {

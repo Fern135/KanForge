@@ -23,4 +23,16 @@ async function emit(event, ...args) {
   }
 }
 
-module.exports = { on, emit };
+// Like emit, but for work that must not be skipped (deleting an account's data):
+// every handler still runs, and then the first failure is thrown so the caller
+// stops instead of carrying on as if it had worked.
+async function emitStrict(event, ...args) {
+  const results = await Promise.allSettled((handlers.get(event) || []).map((h) => h(...args)));
+  const failed = results.find((r) => r.status === 'rejected');
+  if (failed) {
+    logger.error({ err: failed.reason, event }, 'event handler failed');
+    throw failed.reason;
+  }
+}
+
+module.exports = { on, emit, emitStrict };

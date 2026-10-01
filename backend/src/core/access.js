@@ -17,4 +17,18 @@ function restrictionsOf(access = {}) {
   return kept.length ? Object.fromEntries(kept) : undefined;
 }
 
-module.exports = { ACCESS_LEVELS, accessTo, restrictionsOf };
+// The stricter of two access maps, app by app (none < view < edit). Used when an
+// invite link carries access, so joining with one can never loosen what a
+// platform admin already restricted.
+function strictest(current, added) {
+  const a = current || {};
+  const b = added || {};
+  const rank = (level) => ACCESS_LEVELS.indexOf(level ?? 'edit');
+  const merged = {};
+  for (const app of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    merged[app] = rank(a[app]) <= rank(b[app]) ? (a[app] ?? 'edit') : b[app];
+  }
+  return restrictionsOf(merged);
+}
+
+module.exports = { ACCESS_LEVELS, accessTo, restrictionsOf, strictest };

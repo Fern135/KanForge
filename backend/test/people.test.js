@@ -107,9 +107,27 @@ describe('people and app access', () => {
     await api().post('/api/invites/accept').set(auth(joiner.token, null)).send({ token: body.token }).expect(201);
     assert.equal((await api().get('/api/office/documents').set(auth(joiner.token)).expect(403)).body.error.code, 'NO_ACCESS');
     await api().get('/api/notes').set(auth(joiner.token)).expect(200);
+    // A link can only add limits. Joining a second workspace through a link that
+    // only limits Notes keeps the earlier Office limit.
+    await api().post('/api/workspaces').set(auth(admin.token, null)).send({ name: 'Merge', slug: 'merge-space' }).expect(201);
+    const mergeId = String((await Workspace.findOne({ slug: 'merge-space' }).lean())._id);
+    const second = (await api().post('/api/admin/people/invite').set(auth(admin.token))
+      .send({ workspaceId: mergeId, access: { notes: 'view', office: 'edit' } }).expect(201)).body;
+    await api().post('/api/invites/accept').set(auth(joiner.token, null)).send({ token: second.token }).expect(201);
+    assert.deepEqual((await User.findById(joiner.user.id).lean()).access, { office: 'none', notes: 'view' });
+    assert.equal((await api().get('/api/office/documents').set(auth(joiner.token, 'merge-space')).expect(403)).body.error.code, 'NO_ACCESS');
     // Single use by default.
     const late = await registerUser({}, { joinTestWorkspace: false });
     await api().post('/api/invites/accept').set(auth(late.token, null)).send({ token: body.token }).expect(404);
+    // A workspace admin with limited access can't invite (a second account of
+    // their own would get round the limits), and their old links stop working.
+    const lead = await registerUser({}, { joinTestWorkspace: false });
+    await api().post('/api/workspaces').set(auth(lead.token, null)).send({ name: 'Lead', slug: 'lead-space' }).expect(201);
+    const oldLink = (await api().post('/api/workspace/invites').set(auth(lead.token, 'lead-space')).send({}).expect(201)).body.token;
+    await api().patch(`/api/admin/people/${lead.user.id}`).set(auth(admin.token)).send({ access: { notes: 'view' } }).expect(200);
+    assert.equal((await api().post('/api/workspace/invites').set(auth(lead.token, 'lead-space')).send({}).expect(403)).body.error.code, 'ACCESS_LIMITED');
+    const alt = await registerUser({}, { joinTestWorkspace: false });
+    await api().post('/api/invites/accept').set(auth(alt.token, null)).send({ token: oldLink }).expect(404);
     // Workspace admins' own invite links can't set access.
     await api().post('/api/workspaces').set(auth(admin.token, null)).send({ name: 'Own', slug: 'own-space' }).expect(201);
     await api().post('/api/workspace/invites').set(auth(admin.token, 'own-space')).send({ access: { notes: 'none' } }).expect(400);
@@ -122,11 +140,18 @@ describe('people and app access', () => {
     await api().post('/api/auth/login').send({ email: target.email, password: target.password }).expect(401);
     assert.equal((await signIn(target.email, body.password)).user.mustChangePassword, true);
     assert.equal((await api().post(`/api/admin/people/${admin.user.id}/reset-password`).set(auth(admin.token))).body.error.code, 'OWN_ACCOUNT');
+    // Never another platform admin's.
+    const otherAdmin = await registerUser();
+    await makeAdmin(otherAdmin.email);
+    assert.equal((await api().post(`/api/admin/people/${otherAdmin.user.id}/reset-password`).set(auth(admin.token)).expect(400)).body.error.code, 'ADMIN_FULL_ACCESS');
+    await api().post('/api/auth/login').send({ email: otherAdmin.email, password: otherAdmin.password }).expect(200);
+    await User.updateOne({ _id: otherAdmin.user.id }, { $set: { role: 'user' } });
     await api().post('/api/admin/people/aaaaaaaaaaaaaaaaaaaaaaaa/reset-password').set(auth(admin.token)).expect(404);
   });
 
   it('disables an account: signed out everywhere, and no way back in until enabled', async () => {
     const target = await registerUser();
+    await api().put('/api/auth/pin').set(auth(target.token)).send({ currentPassword: target.password, pin: '573902' }).expect(200);
     const set = (disabled) => api().patch(`/api/admin/people/${target.user.id}`).set(auth(admin.token)).send({ disabled });
     assert.deepEqual((await set(true).expect(200)).body, { disabled: true });
 
@@ -136,6 +161,8 @@ describe('people and app access', () => {
     // Only the right password learns that the account is disabled.
     assert.equal((await api().post('/api/auth/login').send({ email: target.email, password: 'not the password' })).body.error.code, 'BAD_CREDENTIALS');
     assert.equal((await api().post('/api/auth/login').send({ email: target.email, password: target.password }).expect(403)).body.error.code, 'ACCOUNT_DISABLED');
+    // No PIN sign-in gets set up along the way.
+    assert.equal((await User.findById(target.user.id).select('+pinDevices').lean()).pinDevices, undefined);
     const listed = (await api().get('/api/admin/people').set(auth(admin.token)).expect(200)).body.people.find((p) => p.id === target.user.id);
     assert.equal(listed.disabled, true);
 
@@ -147,6 +174,23 @@ describe('people and app access', () => {
     await api().patch(`/api/admin/people/${target.user.id}`).set(auth(admin.token)).send({}).expect(400);
   });
 
+  it('keeps the account when its private data could not be deleted, so it can be retried', async () => {
+    const events = require('../src/core/services/events');
+    const target = await registerUser();
+    let fail = true;
+    events.on('user.deleted', async () => {
+      if (fail) throw new Error('database unavailable');
+    });
+    await api().delete(`/api/admin/people/${target.user.id}`).set(auth(admin.token)).expect(500);
+    assert.ok(await User.exists({ _id: target.user.id }));
+    // It can't be used while the deletion is unfinished.
+    await api().get('/api/boards').set(auth(target.token)).expect(401);
+    assert.equal((await User.findById(target.user.id).lean()).disabled, true);
+    fail = false;
+    await api().delete(`/api/admin/people/${target.user.id}`).set(auth(admin.token)).expect(204);
+    assert.equal(await User.exists({ _id: target.user.id }), null);
+  });
+
   it('deletes an account: boards pass on, private notes go, and no one is left alone', async () => {
     const leaving = await registerUser();
     const board = (await api().post('/api/boards').set(auth(leaving.token)).send({ title: 'Roadmap' }).expect(201)).body.board;
@@ -156,6 +200,8 @@ describe('people and app access', () => {
     const alone = await api().delete(`/api/admin/people/${leaving.user.id}`).set(auth(admin.token)).expect(409);
     assert.equal(alone.body.error.code, 'ONLY_MEMBER');
     assert.ok(await User.exists({ _id: leaving.user.id }));
+    // A refused deletion leaves the account as it was.
+    await api().get('/api/boards').set(auth(leaving.token)).expect(200);
 
     const partner = await registerUser({}, { joinTestWorkspace: false });
     await joinWorkspace(leaving, 'solo-space', partner);

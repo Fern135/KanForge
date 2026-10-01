@@ -305,12 +305,13 @@ export default function AdminPeople({ currentUserId, guarded, onDeleted }) {
                 <div className="text-muted small text-truncate">
                   {p.email}{p.workspaces.length ? ` · ${p.workspaces.join(', ')}` : ' · No workspace yet'}
                 </div>
-                {p.id !== currentUserId && (
+                {/* Platform admins (you included) are managed under Platform admins, not here. */}
+                {p.role !== 'admin' && (
                   <div className="d-flex flex-wrap gap-3 small">
                     <button type="button" className="btn btn-link btn-sm p-0" onClick={() => setConfirming({ type: 'reset', person: p })}>
                       <FontAwesomeIcon icon={faKey} className="me-1" />Reset password
                     </button>
-                    {p.role !== 'admin' && (p.disabled ? (
+                    {p.disabled ? (
                       <button type="button" className="btn btn-link btn-sm p-0" disabled={busy === `${p.id}:enable`} onClick={() => enable(p)}>
                         <FontAwesomeIcon icon={faCircleCheck} className="me-1" />Enable
                       </button>
@@ -318,12 +319,10 @@ export default function AdminPeople({ currentUserId, guarded, onDeleted }) {
                       <button type="button" className="btn btn-link btn-sm p-0 text-secondary" onClick={() => setConfirming({ type: 'disable', person: p })}>
                         <FontAwesomeIcon icon={faBan} className="me-1" />Disable
                       </button>
-                    ))}
-                    {p.role !== 'admin' && (
-                      <button type="button" className="btn btn-link btn-sm p-0 text-danger" onClick={() => setConfirming({ type: 'delete', person: p })}>
-                        <FontAwesomeIcon icon={faTrashCan} className="me-1" />Delete
-                      </button>
                     )}
+                    <button type="button" className="btn btn-link btn-sm p-0 text-danger" onClick={() => setConfirming({ type: 'delete', person: p })}>
+                      <FontAwesomeIcon icon={faTrashCan} className="me-1" />Delete
+                    </button>
                   </div>
                 )}
               </div>

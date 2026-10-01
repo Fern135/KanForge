@@ -13,9 +13,10 @@ const userSchema = new Schema(
     passwordHash: { type: String, required: true, select: false },
     // Optional sign-in PIN. Off (unset) for every new account.
     pinHash: { type: String, select: false },
-    // Devices allowed to sign in with the PIN alone. Only token hashes are stored.
+    // Devices allowed to sign in with the PIN alone. Only token hashes are stored,
+    // with the hash of the browser's device id (see auth.js browserDevice).
     pinDevices: {
-      type: [{ _id: false, tokenHash: String, createdAt: Date }],
+      type: [{ _id: false, tokenHash: String, createdAt: Date, device: String }],
       default: undefined,
       select: false,
     },

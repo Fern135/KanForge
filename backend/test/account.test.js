@@ -66,6 +66,47 @@ describe('account: devices and deletion requests', () => {
     await api().get('/api/boards').set(auth(laptop.token)).expect(200);
   });
 
+  it('keeps at most 50 browsers signed in, signing out the least recently used', async () => {
+    const tokens = require('../src/core/services/tokens');
+    const u = await registerUser();
+    // 50 more browsers (sessions written directly, as if from earlier sign-ins).
+    const now = Date.now();
+    await Session.insertMany(Array.from({ length: tokens.MAX_DEVICES }, (_, i) => ({
+      user: u.user.id, tokenHash: tokens.sha256(`t${i}-${now}`), family: `fam${String(i).padStart(19, '0')}`,
+      device: tokens.sha256(`d${i}-${now}`), userAgent: 'Old', expiresAt: new Date(now + 86400000), createdAt: new Date(now - (i + 1) * 60000),
+    })));
+    // The least recently used browser also had PIN sign-in.
+    const oldest = tokens.sha256(`d${tokens.MAX_DEVICES - 1}-${now}`);
+    await User.updateOne({ _id: u.user.id }, { $set: { pinDevices: [{ tokenHash: tokens.sha256(`p-${now}`), createdAt: new Date(), device: oldest }] } });
+    const fresh = await api().post('/api/auth/login').send({ email: u.email, password: u.password }).expect(200);
+    const { sessions } = (await api().get('/api/auth/sessions').set(auth(fresh.body.accessToken)).expect(200)).body;
+    assert.equal(sessions.length, tokens.MAX_DEVICES);
+    assert.ok(sessions.some((x) => x.current));
+    // The oldest ones went.
+    assert.ok(!sessions.some((x) => x.id === `fam${String(tokens.MAX_DEVICES - 1).padStart(19, '0')}`));
+    // ...and its PIN sign-in went with it.
+    assert.deepEqual((await User.findById(u.user.id).select('+pinDevices').lean()).pinDevices, []);
+  });
+
+  it('takes PIN sign-in away from a device that is signed out', async () => {
+    const laptop = await registerUser();
+    const pinRes = await api().put('/api/auth/pin').set(auth(laptop.token)).set('Cookie', [`bd=${laptop.cookies.bd}`])
+      .send({ currentPassword: laptop.password, pin: '482916' }).expect(200);
+    const laptopPin = cookiesFrom(pinRes).pd;
+    const phoneRes = await api().post('/api/auth/login').set('User-Agent', 'Phone/1.0').send({ email: laptop.email, password: laptop.password }).expect(200);
+    const phone = cookiesFrom(phoneRes);
+    assert.ok(phone.pd && phone.bd);
+    const pinLogin = (c) => api().post('/api/auth/login-pin').set('Cookie', [`pd=${c.pd}`, `bd=${c.bd}`]).send({ pin: '482916' });
+
+    const { sessions } = (await api().get('/api/auth/sessions').set(auth(laptop.token)).expect(200)).body;
+    const phoneSession = sessions.find((x) => x.userAgent === 'Phone/1.0');
+    await api().delete(`/api/auth/sessions/${phoneSession.id}`).set(auth(laptop.token)).expect(204);
+
+    assert.equal((await pinLogin(phone)).body.error.code, 'PIN_DEVICE_UNKNOWN');
+    // The laptop's own PIN sign-in is untouched.
+    await pinLogin({ pd: laptopPin, bd: laptop.cookies.bd }).expect(200);
+  });
+
   it('shows sessions from before device ids once per browser, and replaces them at the next sign-in', async () => {
     const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/154.0.0.0 Safari/537.36';
     const u = await registerUser();

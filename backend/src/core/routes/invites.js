@@ -7,6 +7,7 @@ const Workspace = require('../models/Workspace');
 const Membership = require('../models/Membership');
 const User = require('../models/User');
 const cache = require('../services/cache');
+const { strictest, restrictionsOf } = require('../access');
 const tokens = require('../services/tokens');
 const workspaces = require('../services/workspaces');
 const { body, ids, z } = require('../middleware/validate');
@@ -66,6 +67,11 @@ function workspaceInvitesRouter({ limiters }) {
   });
 
   router.post('/', limiters.sensitive, body(createSchema), async (req, res) => {
+    // Someone whose app access a platform admin limited could otherwise invite a
+    // second account of their own without those limits.
+    if (req.user.role !== 'admin' && restrictionsOf(req.user.access || {})) {
+      throw AppError.forbidden('Your app access is limited, so you can\'t create invite links. Ask a platform admin to invite people.', 'ACCESS_LIMITED');
+    }
     if ((await Invite.countDocuments(usable({ workspace: req.workspace.id }))) >= MAX_ACTIVE_PER_WORKSPACE) {
       throw AppError.badRequest(`A workspace can have up to ${MAX_ACTIVE_PER_WORKSPACE} active invite links`, 'LIMIT');
     }
@@ -125,10 +131,12 @@ function invitesRouter({ limiters }) {
       // Joined through another request at the same moment.
       if (err?.code !== 11000) throw err;
     }
-    // A link made from the platform admin's People page also sets what the
-    // person can use in each app.
+    // A link made from the platform admin's People page also limits what the
+    // person can use in each app. It only ever adds limits: the stricter of what
+    // they had and what the link carries, app by app.
     if (invite.access && Object.keys(invite.access).length) {
-      await User.updateOne({ _id: req.user.id }, { $set: { access: invite.access } });
+      const current = await User.findById(req.user.id).select('access').lean();
+      await User.updateOne({ _id: req.user.id }, { $set: { access: strictest(current?.access, invite.access) } });
       await cache.invalidateUser(req.user.id);
     }
     audit(req, 'invite.accepted', { invite: String(invite._id), workspace: String(ws._id), role: invite.role });

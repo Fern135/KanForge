@@ -259,6 +259,8 @@ module.exports = function adminRouter({ limiters, apps }) {
     if (req.body.access) {
       const access = restrictionsOf({ ...(user.access ? Object.fromEntries(user.access) : {}), ...req.body.access });
       await User.updateOne({ _id: user._id }, access ? { $set: { access } } : { $unset: { access: '' } });
+      // Their invite links stop working too: limited people can't invite (see invites.js).
+      if (access) await Invite.deleteMany({ createdBy: user._id, access: trusted({ $exists: false }) });
       audit(req, 'admin.access_changed', { target, access: access || {} });
       out.access = access || {};
     }
@@ -285,10 +287,10 @@ module.exports = function adminRouter({ limiters, apps }) {
   });
 
   // A new temporary password for someone who lost theirs. Signs them out everywhere.
+  // Not for platform admins: one admin could otherwise take over the others.
   router.post('/people/:userId/reset-password', selfHostedOnly, limiters.sensitive, requireRecentAuth, ids('userId'), async (req, res) => {
     if (req.params.userId === req.user.id) throw AppError.badRequest('Change your own password from your account page', 'OWN_ACCOUNT');
-    const user = await User.findById(req.params.userId);
-    if (!user) throw AppError.notFound('Person not found');
+    const user = await findPerson(req);
     const password = temporaryPassword();
     await User.updateOne(
       { _id: user._id },
