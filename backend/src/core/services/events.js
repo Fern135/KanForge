@@ -5,6 +5,9 @@ const logger = require('../utils/logger');
 // In-process events so core can tell apps about account changes without
 // depending on them. Apps subscribe when their module loads.
 //   user.renamed  (userId)  cached copies of the user's name are stale
+//   user.deleted  (userId)  the account is being deleted: remove what it owns in
+//                           every workspace (already removed from each one through
+//                           workspace.memberRemoved)
 const handlers = new Map();
 
 function on(event, handler) {

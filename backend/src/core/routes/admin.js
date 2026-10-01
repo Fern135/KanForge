@@ -12,6 +12,7 @@ const { trusted } = require('mongoose');
 const cache = require('../services/cache');
 const tokens = require('../services/tokens');
 const { temporaryPassword, hashPassword } = require('../services/passwords');
+const { deleteAccount } = require('../services/accounts');
 const { platformStats } = require('../services/platformStats');
 const { body, ids, objectId, z } = require('../middleware/validate');
 const { confirmPassword, requireRecentAuth } = require('../middleware/recentAuth');
@@ -66,6 +67,7 @@ const person = (u, workspaceNames = []) => ({
   role: u.role || 'user',
   access: u.access || {},
   mustChangePassword: Boolean(u.mustChangePassword),
+  disabled: Boolean(u.disabled),
   workspaces: workspaceNames,
   createdAt: new Date(u.createdAt).toISOString(),
   lastActiveAt: u.lastActiveAt ? new Date(u.lastActiveAt).toISOString() : null,
@@ -99,7 +101,9 @@ module.exports = function adminRouter({ limiters, apps }) {
     expiresInDays: z.number().int().min(1).max(30).default(7),
     maxUses: z.number().int().min(1).max(1000).nullable().default(1),
   });
-  const updatePersonSchema = z.strictObject({ access: accessSchema });
+  const updatePersonSchema = z
+    .strictObject({ access: accessSchema.optional(), disabled: z.boolean().optional() })
+    .refine((b) => b.access || b.disabled !== undefined, 'Nothing to change');
 
   async function findWorkspace(id) {
     const ws = await Workspace.findById(id).select('name slug').lean();
@@ -107,11 +111,14 @@ module.exports = function adminRouter({ limiters, apps }) {
     return ws;
   }
 
-  // Someone else's account, not a platform admin (they always have full access).
+  // Someone else's account, not a platform admin (they always have full access,
+  // and can't be disabled or deleted until they stop being one).
   async function findPerson(req) {
     const user = await User.findById(req.params.userId);
     if (!user) throw AppError.notFound('Person not found');
-    if (user.role === 'admin') throw AppError.badRequest('Platform admins always have full access', 'ADMIN_FULL_ACCESS');
+    if (user.role === 'admin') {
+      throw AppError.badRequest('Platform admins always have full access. Remove them as platform admin first.', 'ADMIN_FULL_ACCESS');
+    }
     return user;
   }
 
@@ -146,7 +153,7 @@ module.exports = function adminRouter({ limiters, apps }) {
   router.get('/people', selfHostedOnly, async (_req, res) => {
     const [users, workspaceList] = await Promise.all([
       User.find().sort({ name: 1 }).limit(MAX_PEOPLE_LISTED)
-        .select('name email role access mustChangePassword createdAt lastActiveAt').lean(),
+        .select('name email role access mustChangePassword disabled createdAt lastActiveAt').lean(),
       Workspace.find().sort({ name: 1 }).limit(MAX_WORKSPACES_LISTED).select('name slug').lean(),
     ]);
     const names = new Map(workspaceList.map((w) => [String(w._id), w.name]));
@@ -203,14 +210,37 @@ module.exports = function adminRouter({ limiters, apps }) {
     res.status(201).json({ token, expiresAt: invite.expiresAt.toISOString(), workspace: { name: ws.name, slug: ws.slug } });
   });
 
-  // What someone can use in each app. Applies to their next request.
+  // What someone can use in each app, and whether they can sign in at all.
+  // Applies to their next request. Disabling also signs them out everywhere.
   router.patch('/people/:userId', selfHostedOnly, limiters.sensitive, requireRecentAuth, ids('userId'), body(updatePersonSchema), async (req, res) => {
     const user = await findPerson(req);
-    const access = restrictionsOf({ ...(user.access ? Object.fromEntries(user.access) : {}), ...req.body.access });
-    await User.updateOne({ _id: user._id }, access ? { $set: { access } } : { $unset: { access: '' } });
-    await cache.invalidateUser(String(user._id));
-    audit(req, 'admin.access_changed', { target: String(user._id), access: access || {} });
-    res.json({ access: access || {} });
+    const target = String(user._id);
+    const out = {};
+    if (req.body.access) {
+      const access = restrictionsOf({ ...(user.access ? Object.fromEntries(user.access) : {}), ...req.body.access });
+      await User.updateOne({ _id: user._id }, access ? { $set: { access } } : { $unset: { access: '' } });
+      audit(req, 'admin.access_changed', { target, access: access || {} });
+      out.access = access || {};
+    }
+    if (req.body.disabled === true) {
+      await User.updateOne({ _id: user._id }, { $set: { disabled: true }, $inc: { tokenVersion: 1 }, $unset: { pinDevices: '' } });
+      await tokens.revokeAllSessions(user._id);
+      audit(req, 'admin.account_disabled', { target });
+    } else if (req.body.disabled === false) {
+      await User.updateOne({ _id: user._id }, { $unset: { disabled: '' } });
+      audit(req, 'admin.account_enabled', { target });
+    }
+    if (req.body.disabled !== undefined) out.disabled = req.body.disabled;
+    await cache.invalidateUser(target);
+    res.json(out);
+  });
+
+  // Deletes someone's account for good (see services/accounts.js).
+  router.delete('/people/:userId', selfHostedOnly, limiters.sensitive, requireRecentAuth, ids('userId'), async (req, res) => {
+    const user = await findPerson(req);
+    await deleteAccount(user._id);
+    audit(req, 'admin.account_deleted', { target: String(user._id) });
+    res.status(204).end();
   });
 
   // A new temporary password for someone who lost theirs. Signs them out everywhere.

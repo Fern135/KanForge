@@ -25,6 +25,8 @@ const userSchema = new Schema(
     // Set when a platform admin made the account or reset its password: the
     // temporary password must be replaced before anything else.
     mustChangePassword: { type: Boolean },
+    // Set by a platform admin: the account can't sign in until it's enabled again.
+    disabled: { type: Boolean },
     // When the account last used the app (updated at most once an hour), for the
     // platform stats.
     lastActiveAt: { type: Date },

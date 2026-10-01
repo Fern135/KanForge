@@ -3,7 +3,16 @@
 const express = require('express');
 const { limiter, perUser, READS } = require('../../core/middleware/rateLimit');
 const { searchLimiter } = require('../../core/services/search');
+const events = require('../../core/services/events');
+const Note = require('./models/Note');
+const NoteFolder = require('./models/NoteFolder');
 const notesRouter = require('./routes');
+
+// Notes and folders are private to their owner, so they go with the account.
+events.on('user.deleted', async (userId) => {
+  const all = { allWorkspaces: true };
+  await Promise.all([Note.deleteMany({ owner: userId }).setOptions(all), NoteFolder.deleteMany({ owner: userId }).setOptions(all)]);
+});
 
 module.exports = {
   id: 'notes',

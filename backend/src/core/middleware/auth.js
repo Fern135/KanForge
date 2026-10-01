@@ -13,7 +13,7 @@ const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
 async function loadUser(id) {
   const cached = await cache.getUser(id);
   if (cached) return cached;
-  const user = await User.findById(id).select('email name role tokenVersion access mustChangePassword').lean();
+  const user = await User.findById(id).select('email name role tokenVersion access mustChangePassword disabled').lean();
   if (!user) return null;
   const slim = {
     id: String(user._id),
@@ -23,6 +23,7 @@ async function loadUser(id) {
     tokenVersion: user.tokenVersion,
     access: user.access || null,
     mustChangePassword: Boolean(user.mustChangePassword),
+    disabled: Boolean(user.disabled),
   };
   await cache.setUser(slim.id, slim);
   return slim;
@@ -48,7 +49,7 @@ async function requireAuth(req, _res, next) {
   if (!/^[a-f0-9]{24}$/.test(payload.sub)) throw AppError.unauthorized('Invalid token', 'TOKEN_INVALID');
 
   const [user, revoked] = await Promise.all([loadUser(payload.sub), isAccessTokenRevoked(payload.jti)]);
-  if (!user || revoked || user.tokenVersion !== payload.ver) {
+  if (!user || revoked || user.disabled || user.tokenVersion !== payload.ver) {
     throw AppError.unauthorized('Session revoked', 'TOKEN_INVALID');
   }
   // A temporary password (set by a platform admin) is replaced before anything

@@ -23,6 +23,7 @@
 - Add someone with a temporary password (they choose their own at first sign-in) or with an invite link, straight into a workspace
 - Choose what each person can use in each app: **None** hides it, **View** opens it read-only, **Edit** is full use. Changes apply right away, and platform admins always have full access
 - Reset a password when someone is locked out: they get a new temporary password and are signed out everywhere
+- Disable an account to block sign-in (their data is kept, and it can be enabled again), or delete it for good: boards they owned pass to a workspace admin and their private notes and documents are deleted
 
 **Workspaces**
 - Everything lives in a workspace (a team or company). One account can belong to several, and the navbar's workspace menu switches between them. Each workspace has its own address, `/app/w/<name>/`

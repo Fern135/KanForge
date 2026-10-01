@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCopy, faKey, faUserPlus, faUsers } from '@fortawesome/free-solid-svg-icons';
+import {
+  faBan, faCircleCheck, faCopy, faKey, faTrashCan, faUserPlus, faUsers,
+} from '@fortawesome/free-solid-svg-icons';
 import { useToast } from '../context/ToastContext';
 import { adminApi } from '../api/endpoints';
 import { errorMessage } from '../api/client';
@@ -193,7 +195,8 @@ export default function AdminPeople({ currentUserId, guarded }) {
   const [filter, setFilter] = useState('');
   const [adding, setAdding] = useState(false);
   const [secret, setSecret] = useState(null);
-  const [resetting, setResetting] = useState(null);
+  // { type: 'reset' | 'disable' | 'delete', person }
+  const [confirming, setConfirming] = useState(null);
   const [busy, setBusy] = useState('');
 
   useEffect(() => {
@@ -224,7 +227,35 @@ export default function AdminPeople({ currentUserId, guarded }) {
     setSecret(shownSecret);
   };
 
-  // From the confirm dialog: it closes unless the reset failed outright.
+  const enable = async (p) => {
+    setBusy(`${p.id}:enable`);
+    await guarded(async () => {
+      await adminApi.setDisabled(p.id, false);
+      patchPerson(p.id, { disabled: false });
+      toast.success(`${p.name} can sign in again`);
+    });
+    setBusy('');
+  };
+
+  // From the confirm dialogs: each closes unless the change failed outright.
+  const disable = async (p) => {
+    const result = await guarded(async () => {
+      await adminApi.setDisabled(p.id, true);
+      patchPerson(p.id, { disabled: true });
+      toast.success(`${p.name} is disabled and was signed out`);
+    });
+    if (result === 'failed') throw new Error('not disabled');
+  };
+
+  const remove = async (p) => {
+    const result = await guarded(async () => {
+      await adminApi.deletePerson(p.id);
+      setData((d) => ({ ...d, people: d.people.filter((x) => x.id !== p.id) }));
+      toast.success(`${p.name}'s account was deleted`);
+    });
+    if (result === 'failed') throw new Error('not deleted');
+  };
+
   const resetPassword = async (p) => {
     const result = await guarded(async () => {
       const { password } = await adminApi.resetPassword(p.id);
@@ -266,15 +297,32 @@ export default function AdminPeople({ currentUserId, guarded }) {
                   <span className="fw-semibold">{p.name}</span>
                   {p.id === currentUserId && <span className="text-muted small"> (you)</span>}
                   {p.role === 'admin' && <span className="badge text-bg-success ms-2">Platform admin</span>}
-                  {p.mustChangePassword && <span className="badge text-bg-warning ms-2">Temporary password</span>}
+                  {p.disabled && <span className="badge text-bg-secondary ms-2">Disabled</span>}
+                  {p.mustChangePassword && !p.disabled && <span className="badge text-bg-warning ms-2">Temporary password</span>}
                 </div>
                 <div className="text-muted small text-truncate">
                   {p.email}{p.workspaces.length ? ` · ${p.workspaces.join(', ')}` : ' · No workspace yet'}
                 </div>
                 {p.id !== currentUserId && (
-                  <button type="button" className="btn btn-link btn-sm p-0 small" onClick={() => setResetting(p)}>
-                    <FontAwesomeIcon icon={faKey} className="me-1" />Reset password
-                  </button>
+                  <div className="d-flex flex-wrap gap-3 small">
+                    <button type="button" className="btn btn-link btn-sm p-0" onClick={() => setConfirming({ type: 'reset', person: p })}>
+                      <FontAwesomeIcon icon={faKey} className="me-1" />Reset password
+                    </button>
+                    {p.role !== 'admin' && (p.disabled ? (
+                      <button type="button" className="btn btn-link btn-sm p-0" disabled={busy === `${p.id}:enable`} onClick={() => enable(p)}>
+                        <FontAwesomeIcon icon={faCircleCheck} className="me-1" />Enable
+                      </button>
+                    ) : (
+                      <button type="button" className="btn btn-link btn-sm p-0 text-secondary" onClick={() => setConfirming({ type: 'disable', person: p })}>
+                        <FontAwesomeIcon icon={faBan} className="me-1" />Disable
+                      </button>
+                    ))}
+                    {p.role !== 'admin' && (
+                      <button type="button" className="btn btn-link btn-sm p-0 text-danger" onClick={() => setConfirming({ type: 'delete', person: p })}>
+                        <FontAwesomeIcon icon={faTrashCan} className="me-1" />Delete
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               {p.role === 'admin' ? (
@@ -295,13 +343,31 @@ export default function AdminPeople({ currentUserId, guarded }) {
 
       {adding && <AddPerson apps={data.apps} workspaces={data.workspaces} guarded={guarded} onAdded={added} onClose={() => setAdding(false)} />}
       {secret && <SecretModal secret={secret} onClose={() => setSecret(null)} />}
-      {resetting && (
+      {confirming?.type === 'reset' && (
         <ConfirmModal
-          title={`Reset ${resetting.name}'s password?`}
+          title={`Reset ${confirming.person.name}'s password?`}
           message="They're signed out everywhere and get a new temporary password to sign in with. They choose their own password after that."
           confirmLabel="Reset password"
-          onClose={() => setResetting(null)}
-          onConfirm={() => resetPassword(resetting)}
+          onClose={() => setConfirming(null)}
+          onConfirm={() => resetPassword(confirming.person)}
+        />
+      )}
+      {confirming?.type === 'disable' && (
+        <ConfirmModal
+          title={`Disable ${confirming.person.name}?`}
+          message="They're signed out everywhere and can't sign in until you enable the account again. Their boards, notes and documents are kept."
+          confirmLabel="Disable"
+          onClose={() => setConfirming(null)}
+          onConfirm={() => disable(confirming.person)}
+        />
+      )}
+      {confirming?.type === 'delete' && (
+        <ConfirmModal
+          title={`Delete ${confirming.person.name}'s account?`}
+          message="This can't be undone. Boards they owned pass to an admin of each workspace, and their private notes and documents are deleted. To keep everything, disable the account instead."
+          confirmLabel="Delete account"
+          onClose={() => setConfirming(null)}
+          onConfirm={() => remove(confirming.person)}
         />
       )}
     </section>

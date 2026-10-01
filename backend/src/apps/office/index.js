@@ -6,6 +6,16 @@ const { searchLimiter } = require('../../core/services/search');
 const documentsRouter = require('./documents');
 const folders = require('./folders');
 const { imagesRouter } = require('./images');
+const events = require('../../core/services/events');
+const OfficeDocument = require('./models/OfficeDocument');
+const OfficeFolder = require('./models/OfficeFolder');
+const OfficeImage = require('./models/OfficeImage');
+
+// Documents, folders and images are private to their owner, so they go with the account.
+events.on('user.deleted', async (userId) => {
+  const all = { allWorkspaces: true };
+  await Promise.all([OfficeDocument, OfficeFolder, OfficeImage].map((M) => M.deleteMany({ owner: userId }).setOptions(all)));
+});
 
 module.exports = {
   id: 'office',

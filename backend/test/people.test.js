@@ -3,8 +3,14 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const Workspace = require('../src/core/models/Workspace');
+const User = require('../src/core/models/User');
+const Membership = require('../src/core/models/Membership');
+const Board = require('../src/apps/boards/models/Board');
+const Note = require('../src/apps/notes/models/Note');
 const { makeAdmin } = require('../scripts/make-admin');
-const { setup, teardown, api, registerUser, auth, TEST_WORKSPACE } = require('./helpers');
+const {
+  setup, teardown, api, registerUser, auth, joinWorkspace, TEST_WORKSPACE,
+} = require('./helpers');
 
 // People on a self-hosted install (the test environment's DEFAULT_PLAN).
 describe('people and app access', () => {
@@ -117,5 +123,58 @@ describe('people and app access', () => {
     assert.equal((await signIn(target.email, body.password)).user.mustChangePassword, true);
     assert.equal((await api().post(`/api/admin/people/${admin.user.id}/reset-password`).set(auth(admin.token))).body.error.code, 'OWN_ACCOUNT');
     await api().post('/api/admin/people/aaaaaaaaaaaaaaaaaaaaaaaa/reset-password').set(auth(admin.token)).expect(404);
+  });
+
+  it('disables an account: signed out everywhere, and no way back in until enabled', async () => {
+    const target = await registerUser();
+    const set = (disabled) => api().patch(`/api/admin/people/${target.user.id}`).set(auth(admin.token)).send({ disabled });
+    assert.deepEqual((await set(true).expect(200)).body, { disabled: true });
+
+    await api().get('/api/boards').set(auth(target.token)).expect(401);
+    const csrf = target.cookies.csrf;
+    await api().post('/api/auth/refresh').set('Cookie', `rt=${target.cookies.rt}; csrf=${csrf}`).set('X-CSRF-Token', csrf).expect(401);
+    // Only the right password learns that the account is disabled.
+    assert.equal((await api().post('/api/auth/login').send({ email: target.email, password: 'not the password' })).body.error.code, 'BAD_CREDENTIALS');
+    assert.equal((await api().post('/api/auth/login').send({ email: target.email, password: target.password }).expect(403)).body.error.code, 'ACCOUNT_DISABLED');
+    const listed = (await api().get('/api/admin/people').set(auth(admin.token)).expect(200)).body.people.find((p) => p.id === target.user.id);
+    assert.equal(listed.disabled, true);
+
+    await set(false).expect(200);
+    const back = await api().post('/api/auth/login').send({ email: target.email, password: target.password }).expect(200);
+    await api().get('/api/boards').set(auth(back.body.accessToken)).expect(200);
+
+    assert.equal((await api().patch(`/api/admin/people/${admin.user.id}`).set(auth(admin.token)).send({ disabled: true })).body.error.code, 'ADMIN_FULL_ACCESS');
+    await api().patch(`/api/admin/people/${target.user.id}`).set(auth(admin.token)).send({}).expect(400);
+  });
+
+  it('deletes an account: boards pass on, private notes go, and no one is left alone', async () => {
+    const leaving = await registerUser();
+    const board = (await api().post('/api/boards').set(auth(leaving.token)).send({ title: 'Roadmap' }).expect(201)).body.board;
+    await api().post('/api/notes').set(auth(leaving.token)).send({ title: 'Private' }).expect(201);
+    await api().post('/api/workspaces').set(auth(leaving.token, null)).send({ name: 'Solo', slug: 'solo-space' }).expect(201);
+
+    const alone = await api().delete(`/api/admin/people/${leaving.user.id}`).set(auth(admin.token)).expect(409);
+    assert.equal(alone.body.error.code, 'ONLY_MEMBER');
+    assert.ok(await User.exists({ _id: leaving.user.id }));
+
+    const partner = await registerUser({}, { joinTestWorkspace: false });
+    await joinWorkspace(leaving, 'solo-space', partner);
+    await api().delete(`/api/admin/people/${leaving.user.id}`).set(auth(admin.token)).expect(204);
+
+    assert.equal(await User.exists({ _id: leaving.user.id }), null);
+    assert.equal(await Membership.countDocuments({ user: leaving.user.id }), 0);
+    assert.equal(await Note.countDocuments({ owner: leaving.user.id }).setOptions({ allWorkspaces: true }), 0);
+    const kept = await Board.findById(board.id).setOptions({ allWorkspaces: true }).lean();
+    assert.ok(kept, 'the board stays');
+    assert.ok(!kept.members.some((m) => String(m.user) === leaving.user.id));
+    assert.equal(kept.members.filter((m) => m.role === 'owner').length, 1);
+    // Solo's only other member takes over as its admin.
+    const solo = await Workspace.findOne({ slug: 'solo-space' }).lean();
+    assert.equal((await Membership.findOne({ workspace: solo._id, user: partner.user.id }).lean()).role, 'admin');
+    await api().post('/api/auth/login').send({ email: leaving.email, password: leaving.password }).expect(401);
+    await api().get('/api/boards').set(auth(leaving.token)).expect(401);
+
+    await api().delete(`/api/admin/people/${admin.user.id}`).set(auth(admin.token)).expect(400);
+    await api().delete(`/api/admin/people/${leaving.user.id}`).set(auth(admin.token)).expect(404);
   });
 });

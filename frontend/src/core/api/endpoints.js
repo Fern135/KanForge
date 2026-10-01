@@ -59,5 +59,7 @@ export const adminApi = {
   addPerson: (body) => data(api.post('/admin/people', body)),
   invitePerson: (body) => data(api.post('/admin/people/invite', body)),
   setAccess: (id, access) => data(api.patch(`/admin/people/${encodeURIComponent(id)}`, { access })),
+  setDisabled: (id, disabled) => data(api.patch(`/admin/people/${encodeURIComponent(id)}`, { disabled })),
+  deletePerson: (id) => api.delete(`/admin/people/${encodeURIComponent(id)}`),
   resetPassword: (id) => data(api.post(`/admin/people/${encodeURIComponent(id)}/reset-password`)),
 };

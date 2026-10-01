@@ -117,7 +117,15 @@ function rememberKnownDevice(res, mail) {
   });
 }
 
+const disabledError = () => AppError.forbidden('This account has been disabled. Ask your administrator.', 'ACCOUNT_DISABLED');
+
+// Every sign-in ends here (password, PIN, sign-up, password change), after the
+// credentials check out, so a disabled account learns it's disabled only then.
 async function startSession(req, res, user, status = 200) {
+  if (user.disabled) {
+    audit(req, 'signin.refused_disabled', { user: String(user._id) });
+    throw disabledError();
+  }
   const { token: refreshToken, family } = await tokens.createSession(user._id, meta(req));
   setAuthCookies(res, refreshToken);
   rememberKnownDevice(res, user.email);
@@ -220,7 +228,7 @@ module.exports = function authRouter(limiters) {
       throw err;
     }
     const user = await User.findById(result.userId);
-    if (!user) {
+    if (!user || user.disabled) {
       clearAuthCookies(res);
       throw AppError.unauthorized('Session expired', 'REFRESH_INVALID');
     }
