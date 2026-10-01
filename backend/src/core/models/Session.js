@@ -14,6 +14,9 @@ const sessionSchema = new Schema(
     revokedAt: { type: Date, default: null },
     userAgent: { type: String, maxlength: 256 },
     ip: { type: String, maxlength: 64 },
+    // SHA-256 of the browser's device id cookie (see auth.js browserDevice): one
+    // browser, one entry in the device list.
+    device: { type: String, minlength: 64, maxlength: 64 },
   },
   { timestamps: true },
 );

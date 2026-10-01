@@ -64,7 +64,9 @@ export default defineConfig({
     host: true,
     port: 5173,
     proxy: {
-      '/api': { target: process.env.VITE_API_PROXY || 'http://localhost:4000', changeOrigin: false },
+      // xfwd: pass the browser's address on (X-Forwarded-For), like nginx does in
+      // production, so the API sees the visitor rather than this dev server.
+      '/api': { target: process.env.VITE_API_PROXY || 'http://localhost:4000', changeOrigin: false, xfwd: true },
     },
   },
   css: {

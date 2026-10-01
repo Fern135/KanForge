@@ -8,7 +8,7 @@ const Membership = require('../models/Membership');
 const Invite = require('../models/Invite');
 const { PAID_PLAN_IDS, planOf } = require('../plans');
 const { ACCESS_LEVELS, restrictionsOf } = require('../access');
-const { trusted } = require('mongoose');
+const { trusted, Types } = require('mongoose');
 const cache = require('../services/cache');
 const tokens = require('../services/tokens');
 const { temporaryPassword, hashPassword } = require('../services/passwords');
@@ -68,6 +68,7 @@ const person = (u, workspaceNames = []) => ({
   access: u.access || {},
   mustChangePassword: Boolean(u.mustChangePassword),
   disabled: Boolean(u.disabled),
+  deletionRequestedAt: u.deletionRequestedAt ? new Date(u.deletionRequestedAt).toISOString() : null,
   workspaces: workspaceNames,
   createdAt: new Date(u.createdAt).toISOString(),
   lastActiveAt: u.lastActiveAt ? new Date(u.lastActiveAt).toISOString() : null,
@@ -149,11 +150,50 @@ module.exports = function adminRouter({ limiters, apps }) {
     res.json({ stats: await platformStats(), selfHosted: config.selfHosted });
   });
 
+  // People who asked for their account to be deleted, oldest request first. On
+  // the hosted service too: the only place it lists people other than admins,
+  // because acting on the request needs to know whose it is.
+  router.get('/deletion-requests', async (_req, res) => {
+    const users = await User.find({ deletionRequestedAt: trusted({ $exists: true }) }).sort({ deletionRequestedAt: 1 })
+      .limit(MAX_PEOPLE_LISTED).select('name email deletionRequestedAt').lean();
+    const memberships = await Membership.find({ user: trusted({ $in: users.map((u) => u._id) }) }).select('user workspace').lean();
+    const counts = await Membership.aggregate([
+      { $match: { workspace: { $in: [...new Set(memberships.map((m) => String(m.workspace)))].map((id) => new Types.ObjectId(id)) } } },
+      { $group: { _id: '$workspace', n: { $sum: 1 } } },
+    ]);
+    const size = new Map(counts.map((c) => [String(c._id), c.n]));
+    const soloOf = (id) => memberships.filter((m) => String(m.user) === id && size.get(String(m.workspace)) === 1).map((m) => String(m.workspace));
+    const soloIds = [...new Set(users.flatMap((u) => soloOf(String(u._id))))];
+    const names = new Map((await Workspace.find({ _id: trusted({ $in: soloIds }) }).select('name').lean()).map((w) => [String(w._id), w.name]));
+    res.json({
+      requests: users.map((u) => ({
+        id: String(u._id),
+        name: u.name,
+        email: u.email,
+        requestedAt: u.deletionRequestedAt.toISOString(),
+        // Workspaces only they are in, deleted along with the account.
+        soloWorkspaces: soloOf(String(u._id)).map((id) => names.get(id)).filter(Boolean),
+      })),
+    });
+  });
+
+  // Carries out a deletion request.
+  router.delete('/deletion-requests/:userId', limiters.sensitive, requireRecentAuth, ids('userId'), async (req, res) => {
+    const user = await User.findOne({ _id: req.params.userId, deletionRequestedAt: trusted({ $exists: true }) }).select('role').lean();
+    if (!user) throw AppError.notFound('No deletion request for that account');
+    if (user.role === 'admin') {
+      throw AppError.badRequest('Platform admins can\'t be deleted. Remove them as platform admin first.', 'ADMIN_FULL_ACCESS');
+    }
+    await deleteAccount(user._id, { withSoloWorkspaces: true });
+    audit(req, 'admin.account_deleted', { target: req.params.userId, requested: true });
+    res.status(204).end();
+  });
+
   // Everyone on the install, the workspaces they're in and what they can use.
   router.get('/people', selfHostedOnly, async (_req, res) => {
     const [users, workspaceList] = await Promise.all([
       User.find().sort({ name: 1 }).limit(MAX_PEOPLE_LISTED)
-        .select('name email role access mustChangePassword disabled createdAt lastActiveAt').lean(),
+        .select('name email role access mustChangePassword disabled deletionRequestedAt createdAt lastActiveAt').lean(),
       Workspace.find().sort({ name: 1 }).limit(MAX_WORKSPACES_LISTED).select('name slug').lean(),
     ]);
     const names = new Map(workspaceList.map((w) => [String(w._id), w.name]));
@@ -235,10 +275,11 @@ module.exports = function adminRouter({ limiters, apps }) {
     res.json(out);
   });
 
-  // Deletes someone's account for good (see services/accounts.js).
+  // Deletes someone's account for good (see services/accounts.js). When they
+  // asked for it themselves, workspaces only they are in go with it.
   router.delete('/people/:userId', selfHostedOnly, limiters.sensitive, requireRecentAuth, ids('userId'), async (req, res) => {
     const user = await findPerson(req);
-    await deleteAccount(user._id);
+    await deleteAccount(user._id, { withSoloWorkspaces: Boolean(user.deletionRequestedAt) });
     audit(req, 'admin.account_deleted', { target: String(user._id) });
     res.status(204).end();
   });

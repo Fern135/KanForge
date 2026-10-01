@@ -189,7 +189,7 @@ function AddPerson({ apps, workspaces, guarded, onAdded, onClose }) {
 }
 
 // Self-hosted installs: everyone on the server, and what each person can use.
-export default function AdminPeople({ currentUserId, guarded }) {
+export default function AdminPeople({ currentUserId, guarded, onDeleted }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [filter, setFilter] = useState('');
@@ -252,6 +252,7 @@ export default function AdminPeople({ currentUserId, guarded }) {
       await adminApi.deletePerson(p.id);
       setData((d) => ({ ...d, people: d.people.filter((x) => x.id !== p.id) }));
       toast.success(`${p.name}'s account was deleted`);
+      if (p.deletionRequestedAt) onDeleted?.();
     });
     if (result === 'failed') throw new Error('not deleted');
   };
@@ -298,6 +299,7 @@ export default function AdminPeople({ currentUserId, guarded }) {
                   {p.id === currentUserId && <span className="text-muted small"> (you)</span>}
                   {p.role === 'admin' && <span className="badge text-bg-success ms-2">Platform admin</span>}
                   {p.disabled && <span className="badge text-bg-secondary ms-2">Disabled</span>}
+                  {p.deletionRequestedAt && <span className="badge text-bg-danger ms-2">Deletion requested</span>}
                   {p.mustChangePassword && !p.disabled && <span className="badge text-bg-warning ms-2">Temporary password</span>}
                 </div>
                 <div className="text-muted small text-truncate">
@@ -364,7 +366,9 @@ export default function AdminPeople({ currentUserId, guarded }) {
       {confirming?.type === 'delete' && (
         <ConfirmModal
           title={`Delete ${confirming.person.name}'s account?`}
-          message="This can't be undone. Boards they owned pass to an admin of each workspace, and their private notes and documents are deleted. To keep everything, disable the account instead."
+          message={confirming.person.deletionRequestedAt
+            ? "They asked for this. It can't be undone: boards they owned pass to an admin of each workspace, their private notes and documents are deleted, and so are workspaces only they are in."
+            : "This can't be undone. Boards they owned pass to an admin of each workspace, and their private notes and documents are deleted. To keep everything, disable the account instead."}
           confirmLabel="Delete account"
           onClose={() => setConfirming(null)}
           onConfirm={() => remove(confirming.person)}

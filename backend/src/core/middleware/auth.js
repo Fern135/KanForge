@@ -48,7 +48,7 @@ async function requireAuth(req, _res, next) {
   const payload = verifyAccessToken(token);
   if (!/^[a-f0-9]{24}$/.test(payload.sub)) throw AppError.unauthorized('Invalid token', 'TOKEN_INVALID');
 
-  const [user, revoked] = await Promise.all([loadUser(payload.sub), isAccessTokenRevoked(payload.jti)]);
+  const [user, revoked] = await Promise.all([loadUser(payload.sub), isAccessTokenRevoked(payload.jti, payload.sid)]);
   if (!user || revoked || user.disabled || user.tokenVersion !== payload.ver) {
     throw AppError.unauthorized('Session revoked', 'TOKEN_INVALID');
   }

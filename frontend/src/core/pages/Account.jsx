@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faShieldHalved, faUser, faRightFromBracket, faKey } from '@fortawesome/free-solid-svg-icons';
+import { faShieldHalved, faUser, faKey } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { authApi } from '../api/endpoints';
 import { errorMessage, setSession } from '../api/client';
+import AccountDevices from './AccountDevices';
+import AccountDeletion from './AccountDeletion';
 
 export default function Account() {
   const { user, setUser, logoutAll } = useAuth();
@@ -162,17 +164,8 @@ export default function Account() {
         </div>
       </section>
 
-      <section className="card border-0 shadow-sm">
-        <div className="card-body d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2">
-          <div>
-            <h2 className="h6 fw-bold mb-1">Sign out everywhere</h2>
-            <p className="text-muted small mb-0">Ends every session on all your devices, including this one.</p>
-          </div>
-          <button type="button" className="btn btn-outline-danger" onClick={signOutEverywhere}>
-            <FontAwesomeIcon icon={faRightFromBracket} className="me-2" />Sign out all
-          </button>
-        </div>
-      </section>
+      <AccountDevices onSignOutEverywhere={signOutEverywhere} />
+      <AccountDeletion />
     </main>
   );
 }

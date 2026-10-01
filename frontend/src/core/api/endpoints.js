@@ -15,6 +15,11 @@ export const authApi = {
   pinStatus: () => data(api.get('/auth/pin')),
   setPin: (body) => data(api.put('/auth/pin', body)),
   disablePin: (body) => data(api.post('/auth/pin/disable', body)),
+  sessions: () => data(api.get('/auth/sessions')),
+  signOutDevice: (id) => api.delete(`/auth/sessions/${encodeURIComponent(id)}`),
+  deletionRequest: () => data(api.get('/auth/deletion-request')),
+  requestDeletion: (currentPassword) => data(api.post('/auth/deletion-request', { currentPassword })),
+  cancelDeletion: () => api.delete('/auth/deletion-request'),
 };
 
 export const appsApi = {
@@ -54,6 +59,8 @@ export const adminApi = {
   admins: () => data(api.get('/admin/admins')),
   addAdmin: (email) => data(api.post('/admin/admins', { email })),
   removeAdmin: (id) => api.delete(`/admin/admins/${encodeURIComponent(id)}`),
+  deletionRequests: () => data(api.get('/admin/deletion-requests')),
+  carryOutDeletion: (id) => api.delete(`/admin/deletion-requests/${encodeURIComponent(id)}`),
   // Self-hosted installs only.
   people: () => data(api.get('/admin/people')),
   addPerson: (body) => data(api.post('/admin/people', body)),

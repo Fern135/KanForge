@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 const jwt = require('jsonwebtoken');
-const { trusted } = require('mongoose');
+const { trusted, Types } = require('mongoose');
 const config = require('../config');
 const Session = require('../models/Session');
 const { redis } = require('../db/redis');
@@ -50,12 +50,18 @@ async function revokeAccessToken(payload) {
   await redis.set(revokedKey(payload.jti), '1', 'EX', ttl);
 }
 
+// Signing out one device (a sign-in session) cancels every access token issued
+// to it, the same way, keyed by the session instead of the token.
+const revokedSessionKey = (sid) => `revoked-sid:${sid}`;
+
 // Redis being briefly unreachable shouldn't sign everyone out, so a failed check
 // is logged and treated as not revoked. Tokens still expire within minutes.
-async function isAccessTokenRevoked(jti) {
+// sid: the sign-in session the token belongs to, if it carries one.
+async function isAccessTokenRevoked(jti, sid) {
   if (!jti) return false;
   try {
-    return Boolean(await redis.exists(revokedKey(jti)));
+    const keys = [revokedKey(jti), ...(typeof sid === 'string' ? [revokedSessionKey(sid)] : [])];
+    return (await redis.exists(...keys)) > 0;
   } catch (err) {
     logger.warn({ err: err.message }, 'revoked token check failed');
     return false;
@@ -71,6 +77,7 @@ async function createSession(userId, meta, family = randomToken(16)) {
     expiresAt: new Date(Date.now() + config.refresh.ttlMs),
     userAgent: (meta.userAgent || '').slice(0, 256),
     ip: (meta.ip || '').slice(0, 64),
+    ...(meta.device ? { device: meta.device } : {}),
   });
   return { token, family };
 }
@@ -107,7 +114,8 @@ async function rotateSession(rawToken, meta) {
     throw AppError.unauthorized('Session expired', 'REFRESH_INVALID');
   }
 
-  const { token } = await createSession(consumed.user, meta, consumed.family);
+  // Still the same browser: it keeps its device.
+  const { token } = await createSession(consumed.user, { ...meta, device: consumed.device }, consumed.family);
   return { userId: consumed.user, token, family: consumed.family };
 }
 
@@ -117,6 +125,78 @@ async function revokeSession(rawToken) {
     { tokenHash: sha256(rawToken), revokedAt: null },
     { $set: { revokedAt: new Date() } },
   );
+}
+
+// Ends sign-in sessions (families) at once: their refresh tokens stop working,
+// and so do access tokens already issued to them.
+async function endFamilies(userId, families) {
+  if (!families.length) return;
+  await Session.updateMany({ user: userId, family: trusted({ $in: families }), revokedAt: null }, { $set: { revokedAt: new Date() } });
+  const pipeline = redis.pipeline();
+  for (const f of families) pipeline.set(revokedSessionKey(f), '1', 'EX', config.jwt.ttlSeconds);
+  await pipeline.exec();
+}
+
+const liveSessions = (userId) => Session.find({ user: userId, revokedAt: null, expiresAt: trusted({ $gt: new Date() }) })
+  .sort({ createdAt: -1 }).select('family device userAgent ip createdAt').lean();
+
+// One entry per browser. A browser is its device id (set at sign-in); sessions
+// from before device ids existed count as one browser per user agent (their IP
+// may have changed since, so it isn't part of it).
+function byDevice(live) {
+  const groups = new Map();
+  for (const s of live) {
+    const key = s.device ? `d:${s.device}` : `l:${s.userAgent || ''}`;
+    if (!groups.has(key)) groups.set(key, { latest: s, families: [] });
+    const g = groups.get(key);
+    if (!g.families.includes(s.family)) g.families.push(s.family);
+  }
+  return [...groups.values()];
+}
+
+// The browsers an account is signed in on, most recently active first.
+// signedInAt: when that browser signed in; lastActiveAt: its last refresh
+// (every few minutes while in use). current: the one asking (currentSid).
+async function listSessions(userId, currentSid) {
+  const groups = byDevice(await liveSessions(userId));
+  const families = groups.flatMap((g) => g.families);
+  const firsts = await Session.aggregate([
+    { $match: { user: new Types.ObjectId(String(userId)), family: { $in: families } } },
+    { $group: { _id: '$family', first: { $min: '$createdAt' } } },
+  ]);
+  const signedIn = new Map(firsts.map((f) => [f._id, f.first]));
+  return groups.map(({ latest, families: fams }) => ({
+    id: latest.family,
+    userAgent: latest.userAgent || '',
+    // IPv4 addresses arrive in IPv6 form (::ffff:203.0.113.5).
+    ip: (latest.ip || '').replace(/^::ffff:/, ''),
+    signedInAt: new Date(Math.min(...fams.map((f) => (signedIn.get(f) || latest.createdAt).getTime()))).toISOString(),
+    lastActiveAt: latest.createdAt.toISOString(),
+    current: fams.includes(currentSid),
+  }));
+}
+
+// Signs out the browser that session `family` belongs to (every session it
+// holds). Returns 'done', 'current' (that's the browser asking) or 'missing'.
+async function signOutDevice(userId, family, currentSid) {
+  const group = byDevice(await liveSessions(userId)).find((g) => g.families.includes(family));
+  if (!group) return 'missing';
+  if (group.families.includes(currentSid)) return 'current';
+  await endFamilies(userId, group.families);
+  return 'done';
+}
+
+// A browser signing in again: its earlier sessions for this account end, so it
+// shows up once in the device list instead of once per sign-in. Sessions from
+// before device ids existed can't be told apart, so those from the same kind of
+// browser (user agent) end too.
+async function replaceDeviceSessions(userId, device, userAgent = '') {
+  const families = await Session.distinct('family', {
+    user: userId,
+    revokedAt: null,
+    $or: [{ device }, { device: trusted({ $exists: false }), userAgent: userAgent.slice(0, 256) }],
+  });
+  await endFamilies(userId, families);
 }
 
 async function revokeAllSessions(userId) {
@@ -132,6 +212,9 @@ module.exports = {
   rotateSession,
   revokeSession,
   revokeAllSessions,
+  listSessions,
+  signOutDevice,
+  replaceDeviceSessions,
   randomToken,
   sha256,
 };

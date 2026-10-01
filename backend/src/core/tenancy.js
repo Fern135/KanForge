@@ -1,7 +1,9 @@
 'use strict';
 
 const { AsyncLocalStorage } = require('node:async_hooks');
-const { Schema, Types } = require('mongoose');
+const mongoose = require('mongoose');
+
+const { Schema, Types } = mongoose;
 
 // Tenant isolation. Every model that holds workspace data uses tenantPlugin, which
 // adds a required `workspace` field and scopes every query, update, delete,
@@ -39,7 +41,11 @@ function stamp(doc, ws) {
   else if (String(doc.workspace) !== ws) throw new Error('Document belongs to another workspace');
 }
 
+// Every schema that holds workspace data, so a whole workspace can be deleted.
+const tenantSchemas = new Set();
+
 function tenantPlugin(schema) {
+  tenantSchemas.add(schema);
   schema.add({ workspace: { type: Schema.Types.ObjectId, ref: 'Workspace', required: true, immutable: true } });
 
   for (const op of QUERY_OPS) {
@@ -83,4 +89,7 @@ function tenantPlugin(schema) {
   });
 }
 
-module.exports = { tenantPlugin, runInWorkspace, currentWorkspace };
+// The models that hold workspace data (see tenantSchemas).
+const tenantModels = () => mongoose.modelNames().map((n) => mongoose.model(n)).filter((m) => tenantSchemas.has(m.schema));
+
+module.exports = { tenantPlugin, runInWorkspace, currentWorkspace, tenantModels };

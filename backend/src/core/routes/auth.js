@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const express = require('express');
+const { trusted } = require('mongoose');
 const argon2 = require('argon2');
 const config = require('../config');
 const User = require('../models/User');
@@ -38,6 +39,9 @@ const pin = z
 const pinLoginSchema = z.strictObject({ pin: z.string().regex(/^\d{1,8}$/) });
 const setPinSchema = z.strictObject({ currentPassword: z.string().min(1).max(128), pin });
 const disablePinSchema = z.strictObject({ currentPassword: z.string().min(1).max(128) });
+const deletionSchema = z.strictObject({ currentPassword: z.string().min(1).max(128) });
+// A sign-in session's id (its refresh token family): randomToken(16).
+const SESSION_ID_RE = /^[A-Za-z0-9_-]{22}$/;
 
 const meta = (req) => ({ ip: req.ip, userAgent: req.get('user-agent') });
 
@@ -117,6 +121,21 @@ function rememberKnownDevice(res, mail) {
   });
 }
 
+// Names this browser (a random id, not tied to any account). Only its hash is
+// stored on sessions, and it's renewed at every sign-in.
+function browserDevice(req, res) {
+  let raw = req.cookies?.[config.browserDevice.cookieName];
+  if (typeof raw !== 'string' || !SESSION_ID_RE.test(raw)) raw = tokens.randomToken(16);
+  res.cookie(config.browserDevice.cookieName, raw, {
+    httpOnly: true,
+    secure: config.refresh.cookieSecure,
+    sameSite: 'strict',
+    path: config.refresh.cookiePath,
+    maxAge: config.browserDevice.ttlMs,
+  });
+  return tokens.sha256(raw);
+}
+
 const disabledError = () => AppError.forbidden('This account has been disabled. Ask your administrator.', 'ACCOUNT_DISABLED');
 
 // Every sign-in ends here (password, PIN, sign-up, password change), after the
@@ -126,7 +145,10 @@ async function startSession(req, res, user, status = 200) {
     audit(req, 'signin.refused_disabled', { user: String(user._id) });
     throw disabledError();
   }
-  const { token: refreshToken, family } = await tokens.createSession(user._id, meta(req));
+  // Signing in again on this browser replaces its earlier session for this account.
+  const device = browserDevice(req, res);
+  await tokens.replaceDeviceSessions(user._id, device, req.get('user-agent') || '');
+  const { token: refreshToken, family } = await tokens.createSession(user._id, { ...meta(req), device });
   setAuthCookies(res, refreshToken);
   rememberKnownDevice(res, user.email);
   res.status(status).json({ user: user.toJSON(), accessToken: tokens.signAccessToken(user, family) });
@@ -259,6 +281,49 @@ module.exports = function authRouter(limiters) {
     clearAuthCookies(res);
     clearPinDevice(res);
     audit(req, 'signout.everywhere');
+    res.status(204).end();
+  });
+
+  // The devices this account is signed in on. current marks the one asking.
+  router.get('/sessions', requireAuth, async (req, res) => {
+    res.json({ sessions: await tokens.listSessions(req.user.id, req.sessionId) });
+  });
+
+  // Signs out one other device, at once. This device signs out with /logout.
+  router.delete('/sessions/:sessionId', limiters.sensitive, requireAuth, async (req, res) => {
+    const { sessionId } = req.params;
+    if (!SESSION_ID_RE.test(sessionId)) throw AppError.notFound('Session not found');
+    const result = await tokens.signOutDevice(req.user.id, sessionId, req.sessionId);
+    if (result === 'missing') throw AppError.notFound('Session not found');
+    if (result === 'current') throw AppError.badRequest('Use Sign out to end the session on this device', 'CURRENT_SESSION');
+    audit(req, 'signout.device', { session: sessionId });
+    res.status(204).end();
+  });
+
+  // Asking a platform admin to delete this account. It keeps working until then,
+  // and the request can be withdrawn.
+  router.get('/deletion-request', requireAuth, async (req, res) => {
+    const user = await User.findById(req.user.id).select('deletionRequestedAt').lean();
+    res.json({ requestedAt: user?.deletionRequestedAt ? user.deletionRequestedAt.toISOString() : null });
+  });
+
+  router.post('/deletion-request', limiters.sensitive, requireAuth, body(deletionSchema), async (req, res) => {
+    const user = await User.findById(req.user.id).select('+passwordHash');
+    await verifyCurrentPassword(req, user, req.body.currentPassword);
+    if (user.role === 'admin') {
+      throw AppError.badRequest('Platform admins can\'t ask for deletion. Ask another platform admin to remove your admin role first.', 'ADMIN_ACCOUNT');
+    }
+    const requestedAt = user.deletionRequestedAt || new Date();
+    if (!user.deletionRequestedAt) {
+      await User.updateOne({ _id: user._id }, { $set: { deletionRequestedAt: requestedAt } });
+      audit(req, 'account.deletion_requested');
+    }
+    res.status(201).json({ requestedAt: requestedAt.toISOString() });
+  });
+
+  router.delete('/deletion-request', limiters.sensitive, requireAuth, async (req, res) => {
+    const r = await User.updateOne({ _id: req.user.id, deletionRequestedAt: trusted({ $exists: true }) }, { $unset: { deletionRequestedAt: '' } });
+    if (r.modifiedCount) audit(req, 'account.deletion_cancelled');
     res.status(204).end();
   });
 

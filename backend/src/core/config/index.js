@@ -92,6 +92,12 @@ module.exports = Object.freeze({
     cookieName: 'kd',
     ttlMs: 180 * 24 * 60 * 60 * 1000,
   }),
+  // A random id naming this browser, so signing in again replaces its session
+  // instead of adding another to the device list. 400 days: browsers' cookie cap.
+  browserDevice: Object.freeze({
+    cookieName: 'bd',
+    ttlMs: 400 * 24 * 60 * 60 * 1000,
+  }),
   lockout: Object.freeze({
     maxAttempts: 5,
     windowSeconds: 15 * 60,

@@ -4,6 +4,8 @@ const { trusted } = require('mongoose');
 const config = require('../config');
 const Workspace = require('../models/Workspace');
 const Membership = require('../models/Membership');
+const Invite = require('../models/Invite');
+const { runInWorkspace, tenantModels } = require('../tenancy');
 const { planOf } = require('../plans');
 const AppError = require('../utils/AppError');
 
@@ -55,4 +57,12 @@ async function create({ name, slug, userId }) {
   return summary(ws.toObject(), 'admin');
 }
 
-module.exports = { listForUser, create, summary, MAX_CREATED_PER_USER };
+// Deletes a workspace and everything in it: every app's data, its members and
+// its invite links. Used when the last person in it deletes their account.
+async function remove(workspaceId) {
+  await runInWorkspace(workspaceId, () => Promise.all(tenantModels().map((M) => M.deleteMany({}))));
+  await Promise.all([Invite.deleteMany({ workspace: workspaceId }), Membership.deleteMany({ workspace: workspaceId })]);
+  await Workspace.deleteOne({ _id: workspaceId });
+}
+
+module.exports = { listForUser, create, remove, summary, MAX_CREATED_PER_USER };

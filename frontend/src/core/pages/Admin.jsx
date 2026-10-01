@@ -9,6 +9,7 @@ import Spinner from '../components/Spinner';
 import Modal from '../components/Modal';
 import ConfirmModal from '../components/ConfirmModal';
 import AdminPeople from './AdminPeople';
+import AdminDeletionRequests from './AdminDeletionRequests';
 import './admin.scss';
 
 // Paid plans only: Self-hosted workspaces are private and never appear here.
@@ -212,6 +213,8 @@ export default function Admin() {
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState('');
   const [removing, setRemoving] = useState(null);
+  // Bumped when an account is deleted from one list, so the other reloads.
+  const [peopleVersion, setPeopleVersion] = useState(0);
   // A change waiting for the password: retried once it's confirmed.
   const [pending, setPending] = useState(null);
 
@@ -316,7 +319,8 @@ export default function Admin() {
         )}
       </section>
 
-      {selfHosted && <AdminPeople currentUserId={user.id} guarded={guarded} />}
+      {selfHosted && <AdminPeople key={peopleVersion} currentUserId={user.id} guarded={guarded} onDeleted={() => setPeopleVersion((v) => v + 1)} />}
+      <AdminDeletionRequests key={`requests-${peopleVersion}`} guarded={guarded} onDeleted={() => setPeopleVersion((v) => v + 1)} />
 
       <div className="row g-4 mb-4">
         <div className={selfHosted ? 'col-12' : 'col-lg-6'}>

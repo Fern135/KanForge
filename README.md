@@ -134,6 +134,8 @@
 - Edit your profile name, change your password and "sign out everywhere"
 - Signing up never makes anyone platform admin. On a new install, create your account, then run `make admin email=you@example.com` (or `./run.sh admin you@example.com`) on the server. Platform admins run the whole server (plans and other platform admins) but only see workspace names and seat counts, not what's inside. There's always at least one
 - Optional security PIN (6 to 8 digits), off by default. Once added under Account & security, you sign in with just the PIN, without typing your email. It works on devices where you've turned it on or signed in with your password since; a new device asks for the password once
+- Account & security lists every device you're signed in on (browser, system, last activity). Sign out any one of them, or all at once
+- Ask for your account to be deleted from Account & security. Platform admins see the request and carry it out; until then you can withdraw it
 
 **Security first**
 - Regularly security-audited, with every workspace kept private to its members. See [Security](#security)
