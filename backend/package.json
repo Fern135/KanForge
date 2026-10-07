@@ -26,13 +26,13 @@
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
     "migrate-mongo": "^14.0.7",
-    "mongoose": "^9.10.3",
-    "pino": "^10.3.1",
+    "mongoose": "^9.10.4",
+    "pino": "^10.4.0",
     "pino-http": "^11.0.0",
     "rate-limit-redis": "^6.0.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "supertest": "^7.3.0"
+    "supertest": "^7.3.1"
   }
 }
