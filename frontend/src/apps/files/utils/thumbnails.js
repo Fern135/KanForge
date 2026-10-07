@@ -7,6 +7,7 @@ import { filesApi } from '../api';
 //   PDFs         the first page (pdf.js)
 //   Word         the first page, laid out from the document's text and pictures
 //   PowerPoint   the first slide
+//   Excel, CSV   the top-left corner of the sheet, as a grid
 //   text         the start of the file, as a page of text
 //
 // A preview is made right after a file is uploaded, from the copy already in the
@@ -24,12 +25,14 @@ const MB = 1024 * 1024;
 // too long to download and open just for a picture of their first page.
 const MAX_SOURCE = {
   image: 40 * MB, pdf: 60 * MB, docx: 40 * MB, pptx: 60 * MB, text: Infinity,
+  // What Office's spreadsheet import accepts (25 MB for Excel, 20 MB for CSV).
+  xlsx: 25 * MB, csv: 20 * MB,
 };
 // Only the start of a text file is ever read.
 const TEXT_BYTES = 64 * 1024;
 
 const ext = (name) => (name.includes('.') ? name.split('.').pop().toLowerCase() : '');
-const TEXT_EXT = new Set(['txt', 'md', 'markdown', 'csv', 'tsv', 'log', 'json', 'xml', 'yaml', 'yml', 'ini', 'js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'h', 'cpp', 'cs', 'php', 'sh', 'css', 'scss', 'html', 'sql']);
+const TEXT_EXT = new Set(['txt', 'md', 'markdown', 'log', 'json', 'xml', 'yaml', 'yml', 'ini', 'js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'h', 'cpp', 'cs', 'php', 'sh', 'css', 'scss', 'html', 'sql']);
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/bmp']);
 
 // Which kind of preview a file can have, or null for none.
@@ -42,6 +45,9 @@ export function thumbKind(item) {
   else if (mime === 'application/pdf' || e === 'pdf') kind = 'pdf';
   else if (e === 'docx') kind = 'docx';
   else if (e === 'pptx') kind = 'pptx';
+  // CSV and TSV are checked before plain text: they look better as a grid.
+  else if (e === 'xlsx') kind = 'xlsx';
+  else if (e === 'csv' || e === 'tsv') kind = 'csv';
   else if (mime.startsWith('text/') || TEXT_EXT.has(e)) kind = 'text';
   return kind && item.size <= MAX_SOURCE[kind] ? kind : null;
 }
@@ -159,6 +165,7 @@ export async function makeThumbnail(file, item) {
   if (kind === 'pdf') return (await import('./thumbs/pdf')).pdfThumb(file);
   if (kind === 'docx') return (await import('./thumbs/docx')).docxThumb(file);
   if (kind === 'pptx') return (await import('./thumbs/pptx')).pptxThumb(file);
+  if (kind === 'xlsx' || kind === 'csv') return (await import('./thumbs/sheet')).sheetThumb(file, item.name);
   throw new NoThumbnail('No preview for this kind of file');
 }
 
