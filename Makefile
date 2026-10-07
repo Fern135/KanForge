@@ -43,7 +43,7 @@ ps: ## Show container status
 status: ps ## Alias for ps
 
 dev: setup ## Start the dev stack with hot reload at http://localhost:5173
-	$(COMPOSE_DEV) up -d --build --wait mongo redis migrate api web-dev
+	$(COMPOSE_DEV) up -d --build --wait mongo redis garage migrate api web-dev
 	@printf "\n  Dev server: http://localhost:5173\n\n"
 
 dev-down: ## Stop the dev stack
@@ -103,7 +103,7 @@ restore: ## Restore a dump: make restore file=backups/xxx.archive.gz (drops exis
 
 test: setup ## Run the backend integration test suite in Docker (isolated test DB)
 	$(COMPOSE) --profile test build api-test
-	$(COMPOSE) up -d --wait mongo redis
+	$(COMPOSE) up -d --wait mongo redis garage
 	$(COMPOSE) --profile test run --rm api-test
 
 audit: ## Check dependencies for known vulnerabilities

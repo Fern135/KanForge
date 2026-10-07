@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faPlus, faMagnifyingGlass, faFileWord, faFileExcel, faFilePowerpoint, faFileImport, faEllipsisVertical, faFolder,
+  faPlus, faHardDrive, faMagnifyingGlass, faFileWord, faFileExcel, faFilePowerpoint, faFileImport, faEllipsisVertical, faFolder,
   faFolderPlus, faPen, faCopy, faArrowRightToBracket, faTrashCan, faRotateLeft, faFolderOpen, faDownload, faXmark,
 } from '@fortawesome/free-solid-svg-icons';
 import { officeApi } from '../api';
@@ -20,6 +20,8 @@ import { useToast } from '../../../core/context/ToastContext';
 import { useWorkspace } from '../../../core/context/WorkspaceContext';
 import ViewOnlyNotice from '../../../core/components/ViewOnlyNotice';
 import { timeAgo } from '../../../core/utils/dates';
+import { acceptExtensions } from '../../files/utils/pick';
+import { useFilesPicker } from '../filesPicker';
 import '../office.scss';
 
 const KIND = {
@@ -96,6 +98,8 @@ function RowMenu({ items }) {
 export default function OfficeHome() {
   const navigate = useNavigate();
   const toast = useToast();
+  // Files to import can also come from the Files app.
+  const [pickFromFiles, filesPicker] = useFilesPicker();
   // View-only access (set by a platform admin): open and download, nothing else.
   const readOnly = !useWorkspace().canEdit('office');
   const newMenu = useDropdown();
@@ -185,10 +189,8 @@ export default function OfficeHome() {
     }
   };
 
-  const onImport = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  // Opens a Word, Excel or CSV file (from the computer or from Files) as a new document.
+  const importFile = async (file) => {
     setImporting(true);
     try {
       const folderId = folderSelected ? selected : null;
@@ -209,6 +211,12 @@ export default function OfficeHome() {
       toast.error(errorMessage(err, err.message || 'Could not open that file'));
       setImporting(false);
     }
+  };
+
+  const onImport = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) importFile(file);
   };
 
   // ---------- Folders ----------
@@ -462,9 +470,19 @@ export default function OfficeHome() {
           {readOnly ? null : view === 'trash' ? (
             docs?.length > 0 && <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => setModal({ type: 'emptyTrash' })}>Empty trash</button>
           ) : (
+            <>
             <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => docxInput.current?.click()} disabled={importing}>
               <FontAwesomeIcon icon={faFileImport} className="me-1" />{importing ? 'Importing…' : 'Import file'}
             </button>
+            {pickFromFiles && (
+              <button type="button" className="btn btn-sm btn-outline-primary" disabled={importing}
+                onClick={() => pickFromFiles({
+                  title: 'Import from Files', accept: acceptExtensions('docx', 'xlsx', 'csv', 'tsv'), confirmLabel: 'Import', onPick: ([file]) => importFile(file),
+                })}>
+                <FontAwesomeIcon icon={faHardDrive} className="me-1" />From Files
+              </button>
+            )}
+            </>
           )}
         </div>
         {view === 'trash' && <div className="form-text px-3 mt-0 mb-2">Documents in the trash are deleted after 30 days.</div>}
@@ -592,6 +610,7 @@ export default function OfficeHome() {
         )}
       </main>
 
+      {filesPicker}
       <input ref={docxInput} type="file" className="d-none" onChange={onImport}
         accept=".docx,.xlsx,.csv,.tsv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
 

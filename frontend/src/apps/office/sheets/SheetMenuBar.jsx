@@ -5,6 +5,7 @@ import {
   faSnowflake, faSquarePlus, faCalendarDay, faClock, faCalculator, faTextWidth, faTextHeight, faBorderAll,
 } from '@fortawesome/free-solid-svg-icons';
 import { DropMenu } from '../docs/ui';
+import { sourceItem } from '../filesPicker';
 import { NUMBER_FORMATS } from './styles';
 import { colName } from './model';
 
@@ -32,7 +33,7 @@ export default function SheetMenuBar({ a, sheet, active, style }) {
         { label: 'Open…', icon: faFolderOpen, onClick: a.openOffice },
         { label: 'Make a copy', icon: faCopy, onClick: a.copyDoc },
         'divider',
-        { label: 'Import Excel or CSV file…', icon: faFileImport, onClick: a.importFile },
+        sourceItem({ label: 'Import Excel or CSV file', icon: faFileImport, computer: a.importFile, files: a.importFileFromFiles }),
         {
           label: 'Download',
           icon: faDownload,

@@ -1,4 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState,
+} from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBuilding, faChartColumn, faUserShield } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../context/AuthContext';
@@ -10,6 +12,7 @@ import Modal from '../components/Modal';
 import ConfirmModal from '../components/ConfirmModal';
 import AdminPeople from './AdminPeople';
 import AdminDeletionRequests from './AdminDeletionRequests';
+import { APPS } from '../../apps';
 import './admin.scss';
 
 // Paid plans only: Self-hosted workspaces are private and never appear here.
@@ -321,6 +324,13 @@ export default function Admin() {
 
       {selfHosted && <AdminPeople key={peopleVersion} currentUserId={user.id} guarded={guarded} onDeleted={() => setPeopleVersion((v) => v + 1)} />}
       <AdminDeletionRequests key={`requests-${peopleVersion}`} guarded={guarded} onDeleted={() => setPeopleVersion((v) => v + 1)} />
+
+      {/* Apps' own platform settings (e.g. Files storage limits). */}
+      {APPS.filter((a) => a.AdminSection).map(({ id, AdminSection }) => (
+        <Suspense key={`${id}-${peopleVersion}`} fallback={<Spinner />}>
+          <AdminSection guarded={guarded} />
+        </Suspense>
+      ))}
 
       <div className="row g-4 mb-4">
         <div className={selfHosted ? 'col-12' : 'col-lg-6'}>

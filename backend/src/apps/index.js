@@ -6,4 +6,5 @@ module.exports = [
   require('./boards'),
   require('./notes'),
   require('./office'),
+  require('./files'),
 ];

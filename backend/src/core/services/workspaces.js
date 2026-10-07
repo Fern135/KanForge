@@ -7,6 +7,7 @@ const Membership = require('../models/Membership');
 const Invite = require('../models/Invite');
 const { runInWorkspace, tenantModels } = require('../tenancy');
 const { planOf } = require('../plans');
+const events = require('./events');
 const AppError = require('../utils/AppError');
 
 // Stops one account from creating workspaces without end.
@@ -60,7 +61,11 @@ async function create({ name, slug, userId }) {
 // Deletes a workspace and everything in it: every app's data, its members and
 // its invite links. Used when the last person in it deletes their account.
 async function remove(workspaceId) {
-  await runInWorkspace(workspaceId, () => Promise.all(tenantModels().map((M) => M.deleteMany({}))));
+  await runInWorkspace(workspaceId, async () => {
+    // Apps first clean up anything kept outside the database (stored files).
+    await events.emitStrict('workspace.deleting', String(workspaceId));
+    await Promise.all(tenantModels().map((M) => M.deleteMany({})));
+  });
   await Promise.all([Invite.deleteMany({ workspace: workspaceId }), Membership.deleteMany({ workspace: workspaceId })]);
   await Workspace.deleteOne({ _id: workspaceId });
 }

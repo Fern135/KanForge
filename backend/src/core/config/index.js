@@ -25,6 +25,19 @@ const schema = z.object({
   // The plan new workspaces start on. Self-hosted installs get every app with no
   // limits. The hosted service sets this to "standard".
   DEFAULT_PLAN: z.enum(PLAN_IDS).default('self-hosted'),
+  // Where the Files app keeps file contents: any S3-compatible object store.
+  // docker-compose runs Garage for this on the same machine (nothing to pay for).
+  // A hosted provider (Backblaze B2, Cloudflare R2, AWS S3...) works by pointing
+  // these at it instead. Without them, the Files app answers "storage not set up".
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_REGION: z.string().min(1).default('garage'),
+  S3_BUCKET: z.string().min(3).max(63).optional(),
+  S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  // Garage (and most self-hosted stores) need bucket-in-path URLs.
+  S3_FORCE_PATH_STYLE: bool.default(true),
+  // Prepended to every object key, so several installs (or the tests) can share a bucket.
+  S3_KEY_PREFIX: z.string().max(100).regex(/^[a-z0-9/_-]*$/).default(''),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -67,6 +80,18 @@ module.exports = Object.freeze({
   // A self-hosted install (not the hosted service): platform admins manage its
   // people and what each of them can use.
   selfHosted: env.DEFAULT_PLAN === 'self-hosted',
+  // Object storage for the Files app (see the S3_* settings above). null when not configured.
+  storage: env.S3_BUCKET && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY
+    ? Object.freeze({
+      endpoint: env.S3_ENDPOINT,
+      region: env.S3_REGION,
+      bucket: env.S3_BUCKET,
+      accessKeyId: env.S3_ACCESS_KEY_ID,
+      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+      forcePathStyle: env.S3_FORCE_PATH_STYLE,
+      keyPrefix: env.S3_KEY_PREFIX,
+    })
+    : null,
   jwt: Object.freeze({
     secret: env.JWT_ACCESS_SECRET,
     ttlSeconds: env.ACCESS_TOKEN_TTL_SECONDS,

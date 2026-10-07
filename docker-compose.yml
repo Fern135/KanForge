@@ -26,6 +26,13 @@ x-api-env: &api-env
   LOG_LEVEL: ${LOG_LEVEL:-info}
   # Plan for new workspaces: self-hosted (every app, no limits), standard or plus.
   DEFAULT_PLAN: ${DEFAULT_PLAN:-self-hosted}
+  # Object storage for the Files app: the garage service below by default, or any
+  # S3-compatible service (set S3_ENDPOINT and S3_REGION in .env to use one).
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://garage:3900}
+  S3_REGION: ${S3_REGION:-garage}
+  S3_BUCKET: ${S3_BUCKET:-kanforge-files}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
 
 # Base images are pinned to exact digests (the tag is kept for reading). Dependabot
 # (.github/dependabot.yml) opens a pull request when a newer one is published.
@@ -92,6 +99,26 @@ services:
       timeout: 3s
       retries: 10
 
+  # Object storage for the Files app: Garage, a small S3-compatible server. It
+  # creates its bucket and access key from the environment on first start
+  # (--single-node --default-bucket), so there's nothing to set up by hand. Files
+  # live in the garage-data volume; back it up along with MongoDB.
+  garage:
+    <<: *hardened
+    image: dxflrs/garage:v2.4.1@sha256:9c96caa2612d3411acc5b0e6701fb238dbfba33e533a6d7d3d811a4b12d0d020
+    read_only: true
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
+      GARAGE_DEFAULT_ACCESS_KEY: ${S3_ACCESS_KEY_ID}
+      GARAGE_DEFAULT_SECRET_KEY: ${S3_SECRET_ACCESS_KEY}
+      GARAGE_DEFAULT_BUCKET: ${S3_BUCKET:-kanforge-files}
+    volumes:
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+      - ./docker/garage/garage.toml:/etc/garage.toml:ro
+    networks: [backend]
+
   # Runs pending migrations, then exits. The API waits for it to succeed.
   migrate:
     <<: *hardened
@@ -128,6 +155,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      garage:
+        condition: service_started
     networks: [backend, edge]
     deploy:
       resources:
@@ -170,17 +199,21 @@ services:
       MONGO_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_APP_DB}_test?authSource=admin
       REDIS_URL: redis://app:${REDIS_PASSWORD}@redis:6379/1
       COOKIE_SECURE: "true"
+      # Test files go under their own prefix in the bucket, apart from real ones.
+      S3_KEY_PREFIX: test/
     command: ["npm", "test"]
     depends_on:
       mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
+      garage:
+        condition: service_started
     networks: [backend]
 
 networks:
-  # MongoDB and Redis live on an internal network with no route to the outside
-  # world. Only the API can reach them.
+  # MongoDB, Redis and Garage live on an internal network with no route to the
+  # outside world. Only the API can reach them.
   backend:
     internal: true
   edge:
@@ -189,3 +222,5 @@ volumes:
   mongo-data:
   mongo-config:
   redis-data:
+  garage-meta:
+  garage-data:

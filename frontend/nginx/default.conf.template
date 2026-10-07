@@ -70,6 +70,33 @@ server {
     include /etc/nginx/snippets/proxy.conf;
   }
 
+  # File uploads arrive in parts of a few MB (6 MB at most, see the API's
+  # files/uploads.js). Each part is passed to the API as it arrives instead of
+  # being written to disk first, and gets longer than usual on a slow connection.
+  location ~ ^/api/files/uploads/[a-f0-9]{24}/parts/[0-9]+$ {
+    limit_req zone=api burst=60 nodelay;
+    client_max_body_size 8m;
+    client_body_timeout 60s;
+    proxy_request_buffering off;
+    include /etc/nginx/snippets/proxy.conf;
+  }
+
+  # Preview images for the Files grid view: a few hundred KB at most (see the
+  # API's files/thumbnails.js).
+  location ~ ^/api/files/nodes/[a-f0-9]{24}/thumbnail$ {
+    limit_req zone=api burst=60 nodelay;
+    client_max_body_size 512k;
+    include /etc/nginx/snippets/proxy.conf;
+  }
+
+  # File downloads (signed links and public links) stream straight through,
+  # however large the file, without nginx buffering them to disk.
+  location /api/public/files/ {
+    limit_req zone=api burst=60 nodelay;
+    proxy_buffering off;
+    include /etc/nginx/snippets/proxy.conf;
+  }
+
   # The React app lives under /app/. A hosted build can add its own pages at /
   # (see the site stage in the Dockerfile). Keep the paths in sync with vite.config.js.
   location = /app { return 301 /app/$is_args$args; }

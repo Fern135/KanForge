@@ -6,6 +6,7 @@ import {
   faAlignRight, faAlignJustify, faListUl, faListOl, faFileWord, faFilePdf, faFileLines as faText, faExpand,
 } from '@fortawesome/free-solid-svg-icons';
 import { DropMenu } from './ui';
+import { sourceItem } from '../filesPicker';
 import { STYLES, applyStyle, setLineSpacing } from './Toolbar';
 import { LINE_SPACINGS } from './fonts';
 
@@ -34,7 +35,7 @@ export default function MenuBar({ editor, actions, zoom, showRuler }) {
         { label: 'Open…', icon: faFolderOpen, onClick: actions.openOffice },
         { label: 'Make a copy', icon: faCopy, onClick: actions.copy },
         'divider',
-        { label: 'Import Word document…', icon: faFileImport, onClick: actions.importDocx },
+        sourceItem({ label: 'Import Word document', icon: faFileImport, computer: actions.importDocx, files: actions.importDocxFromFiles }),
         {
           label: 'Download',
           icon: faDownload,
@@ -76,7 +77,7 @@ export default function MenuBar({ editor, actions, zoom, showRuler }) {
     {
       label: 'Insert',
       items: [
-        { label: 'Picture…', icon: faImage, onClick: actions.image },
+        sourceItem({ label: 'Picture', icon: faImage, computer: actions.image, files: actions.imageFromFiles }),
         { label: 'Table', icon: faTable, onClick: () => c().insertTable({ rows: 3, cols: 3, withHeaderRow: false }).run() },
         { label: 'Link…', icon: faLink, shortcut: 'Ctrl+K', onClick: actions.link },
         'divider',

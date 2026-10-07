@@ -1,0 +1,15 @@
+# Garage: the object storage that holds the Files app's files (see the garage
+# service in docker-compose.yml). One node, one copy of each file: backups are
+# the garage-data volume. The RPC secret and the bucket's access key come from
+# the environment (.env), never from this file.
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "lmdb"
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"

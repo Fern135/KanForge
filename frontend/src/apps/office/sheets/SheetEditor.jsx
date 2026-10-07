@@ -35,6 +35,8 @@ import { useToast } from '../../../core/context/ToastContext';
 import { useWorkspace } from '../../../core/context/WorkspaceContext';
 import ViewOnlyNotice from '../../../core/components/ViewOnlyNotice';
 import { downloadBlob } from '../../../core/utils/download';
+import { acceptExtensions } from '../../files/utils/pick';
+import { useFilesPicker } from '../filesPicker';
 import '../docs/docs.scss';
 import './sheets.scss';
 
@@ -71,6 +73,8 @@ const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace
 function SheetWorkspace({ sync }) {
   const navigate = useNavigate();
   const toast = useToast();
+  // Excel and CSV files can also come from the Files app.
+  const [pickFromFiles, filesPicker] = useFilesPicker();
   const { doc, settings } = sync;
   const trashed = Boolean(doc.trashedAt);
   // View-only access (set by a platform admin) reads like the trash: nothing changes.
@@ -862,6 +866,9 @@ function SheetWorkspace({ sync }) {
       downloadBlob(new Blob([`﻿${toDelimited(rows)}`], { type: 'text/csv;charset=utf-8' }), `${name}.csv`);
     },
     importFile: () => fileInput.current?.click(),
+    importFileFromFiles: pickFromFiles && (() => pickFromFiles({
+      title: 'Open an Excel or CSV file from Files', accept: acceptExtensions('xlsx', 'csv', 'tsv', 'txt'), confirmLabel: 'Open', onPick: ([file]) => importFile(file),
+    })),
     newSpreadsheet: async () => {
       try {
         const { document } = await officeApi.create({ kind: 'sheet', folderId: doc.folderId });
@@ -1144,6 +1151,7 @@ function SheetWorkspace({ sync }) {
         </span>
       </div>
 
+      {filesPicker}
       <input ref={fileInput} type="file" className="d-none" onChange={onImport}
         accept=".xlsx,.csv,.tsv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
 

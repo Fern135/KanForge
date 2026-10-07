@@ -29,6 +29,8 @@ import { useToast } from '../../../core/context/ToastContext';
 import { useWorkspace } from '../../../core/context/WorkspaceContext';
 import ViewOnlyNotice from '../../../core/components/ViewOnlyNotice';
 import { downloadBlob } from '../../../core/utils/download';
+import { acceptImages, acceptExtensions } from '../../files/utils/pick';
+import { useFilesPicker } from '../filesPicker';
 import '../docs/docs.scss';
 import './slides.scss';
 
@@ -347,6 +349,8 @@ function TableEditor({ el, theme, onChange, onCell }) {
 function SlideWorkspace({ sync }) {
   const navigate = useNavigate();
   const toast = useToast();
+  // Pictures and PowerPoint files can also come from the Files app.
+  const [pickFromFiles, filesPicker] = useFilesPicker();
   const { doc } = sync;
   const trashed = Boolean(doc.trashedAt);
   // View-only access (set by a platform admin) reads like the trash: nothing changes.
@@ -752,6 +756,9 @@ function SlideWorkspace({ sync }) {
       }
     },
     importPptx: () => pptxInput.current?.click(),
+    importPptxFromFiles: pickFromFiles && (() => pickFromFiles({
+      title: 'Open a PowerPoint file from Files', accept: acceptExtensions('pptx'), confirmLabel: 'Open', onPick: ([file]) => importFile(file),
+    })),
     downloadPptx: async () => {
       try {
         const { exportPptx } = await import('./exportPptx');
@@ -878,6 +885,9 @@ function SlideWorkspace({ sync }) {
       insertCentered({ type: 'shape', shape, fill: null, stroke: null, strokeWidth: 0, text: '' }, w, h);
     },
     insertImage: () => fileInput.current?.click(),
+    insertImageFromFiles: pickFromFiles && (() => pickFromFiles({
+      title: 'Insert an image from Files', accept: acceptImages, confirmLabel: 'Insert', onPick: ([file]) => insertImageFile(file),
+    })),
     insertTable: (rows, cols) => insertCentered({ ...makeTable(rows, cols) }, Math.min(W - 80, cols * 140), Math.min(H - 80, rows * 44)),
     insertChart: (chart) => insertCentered({ ...makeChart(chart) }, 520, 320),
     insertIcon: () => setModal({ type: 'icon' }),
@@ -1407,6 +1417,7 @@ function SlideWorkspace({ sync }) {
           if (file) insertImageFile(file);
           else pictureFor.current = null;
         }} />
+      {filesPicker}
       <input ref={pptxInput} type="file" className="d-none" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
         onChange={(e) => {
           const file = e.target.files?.[0];

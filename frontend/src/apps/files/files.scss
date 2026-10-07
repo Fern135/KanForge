@@ -1,0 +1,461 @@
+// Files app. Loaded with the Files chunk, so it only arrives when Files is opened.
+// Layout like the other apps: a sidebar of views on the left, the folder on the right.
+
+.files-page {
+  display: flex;
+  height: calc(100vh - 56px);
+  height: calc(100dvh - 56px);
+  overflow: hidden;
+  @media (max-width: 767.98px) {
+    flex-direction: column;
+    height: auto;
+    min-height: calc(100dvh - 56px);
+    overflow: visible;
+  }
+}
+
+// ---------- Sidebar ----------
+
+.files-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: var(--tb-surface);
+  border-right: 1px solid var(--tb-border);
+  @media (min-width: 768px) {
+    width: 250px;
+    overflow-y: auto;
+  }
+  @media (max-width: 767.98px) {
+    border-right: 0;
+    border-bottom: 1px solid var(--tb-border);
+  }
+}
+
+.files-new-btn {
+  padding: 0.55rem 1.25rem;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px rgba(9, 30, 66, 0.18);
+}
+
+.files-nav {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0.5rem;
+  @media (max-width: 767.98px) {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+  }
+}
+
+.files-nav-link {
+  display: flex;
+  align-items: center;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  &:hover { background: var(--tb-gray-bg); color: inherit; }
+  &.active { background: var(--tb-picked); font-weight: 600; color: var(--tb-navy); }
+}
+
+.files-storage {
+  margin-top: auto;
+  padding: 1rem;
+  border-top: 1px solid var(--tb-divider);
+  .progress-bar { background: var(--tb-green-600); }
+  .progress-bar.bg-danger { background: var(--bs-danger); }
+  @media (max-width: 767.98px) { margin-top: 0; }
+}
+
+// ---------- Main area ----------
+
+.files-main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  background: var(--tb-surface);
+  // The drop zone: outlined while files from the computer are dragged over it.
+  &.dragging {
+    outline: 3px dashed var(--tb-green-600);
+    outline-offset: -8px;
+    background: var(--tb-picked-soft);
+  }
+}
+
+.files-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--tb-divider);
+}
+
+.files-search {
+  max-width: 480px;
+  flex: 1;
+}
+
+.files-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem 0.5rem;
+  min-height: 3rem;
+}
+
+.files-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 1.1rem;
+  min-width: 0;
+}
+
+.files-crumb {
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.5rem;
+  color: var(--tb-gray-text);
+  text-decoration: none;
+  &:hover { background: var(--tb-gray-bg); color: inherit; }
+  &.current { color: var(--tb-navy); font-weight: 700; }
+}
+
+.files-selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 1rem 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  background: var(--tb-selected);
+}
+
+.files-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0.5rem 5rem;
+}
+
+.files-empty {
+  padding: 4rem 1rem;
+  text-align: center;
+  color: var(--tb-gray-text);
+}
+
+.files-drop-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 2rem;
+  transform: translateX(-50%);
+  padding: 0.9rem 1.5rem;
+  border-radius: 1rem;
+  background: var(--tb-brand);
+  color: #fff;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 6px 24px rgba(9, 30, 66, 0.3);
+}
+
+// ---------- List layout ----------
+
+.files-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--tb-divider);
+  border-radius: 0.4rem;
+  cursor: default;
+  user-select: none;
+  @media (min-width: 576px) { grid-template-columns: minmax(0, 1fr) 7rem 6rem auto; }
+  @media (min-width: 768px) {
+    &.with-owner { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 7rem 6rem auto; }
+  }
+  &:hover:not(.files-head) { background: var(--tb-row-hover); }
+  &:focus-visible { outline: 2px solid var(--tb-green-600); outline-offset: -2px; }
+  &.selected { background: var(--tb-selected); }
+  &.drop-over { background: var(--tb-picked); box-shadow: inset 0 0 0 2px var(--tb-green-600); }
+}
+
+.files-head {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--tb-gray-text);
+  border-bottom-color: var(--tb-divider);
+  position: sticky;
+  top: 0;
+  background: var(--tb-surface);
+  z-index: 1;
+}
+
+.files-sort {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  &.text-end { text-align: right; }
+  &.active, &:hover { color: var(--tb-navy); }
+}
+
+.files-row-menu {
+  opacity: 0.6;
+  .files-row:hover &, .files-tile:hover &, &:focus { opacity: 1; }
+}
+
+// ---------- Grid layout ----------
+
+.files-grid-wrap { padding: 0 0.5rem; }
+
+.files-grid-heading {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--tb-gray-text);
+  margin: 1rem 0 0.5rem;
+}
+
+.files-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.75rem;
+}
+
+.files-tile {
+  display: flex;
+  flex-direction: column;
+  border-radius: 0.75rem;
+  background: var(--tb-gray-bg);
+  cursor: default;
+  user-select: none;
+  overflow: hidden;
+  &:hover { background: var(--tb-border); }
+  &:focus-visible { outline: 2px solid var(--tb-green-600); outline-offset: 2px; }
+  &.selected { background: var(--tb-selected); }
+  &.drop-over { background: var(--tb-picked); box-shadow: inset 0 0 0 2px var(--tb-green-600); }
+}
+
+.files-tile-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 140px;
+  margin: 0 0.5rem;
+  border-radius: 0.5rem;
+  background: var(--tb-surface);
+  overflow: hidden;
+  // A preview image fills the box. Photos are cropped to fit; pages and slides
+  // show from the top, the way Drive shows a document's first page.
+  img {
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    &.is-photo { object-fit: cover; }
+    &.is-page { object-fit: cover; object-position: top center; }
+  }
+  // Pages are white, so they get an edge to stand apart from the tile.
+  &.has-image { border: 1px solid var(--tb-border); }
+}
+
+.files-tile-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.4rem 0.55rem 0.8rem;
+  font-weight: 500;
+  font-size: 0.9rem;
+  min-width: 0;
+  .files-row-menu { margin-left: auto; flex-shrink: 0; }
+  .files-tile-file & { order: -1; }
+}
+
+.files-folder-icon { color: #d9a441; }
+
+// ---------- Menus and dialogs ----------
+
+.files-context-menu {
+  position: fixed;
+  z-index: 1060;
+  min-width: 200px;
+}
+
+.files-move-list { max-height: 50vh; overflow-y: auto; }
+
+.files-move-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.55rem 0.9rem;
+  border: 0;
+  background: none;
+  text-align: left;
+  min-width: 0;
+  &:hover:not(:disabled) { background: var(--tb-gray-bg); }
+  &:disabled { opacity: 0.45; }
+}
+
+// ---------- Uploads ----------
+
+.files-upload-panel {
+  position: fixed;
+  right: 1.25rem;
+  // Above the light/dark switch in the corner.
+  bottom: 4.25rem;
+  z-index: 1050;
+  width: min(360px, calc(100vw - 2rem));
+  border-radius: 0.9rem;
+  overflow: hidden;
+  background: var(--tb-surface);
+}
+
+.files-upload-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.6rem 0.6rem 0.6rem 1rem;
+  background: var(--tb-brand);
+  color: #fff;
+  .icon-btn:hover { background: rgba(255, 255, 255, 0.12); }
+}
+
+.files-upload-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.files-upload-item {
+  padding: 0.5rem 0.75rem 0.5rem 1rem;
+  border-bottom: 1px solid var(--tb-divider);
+  .progress-bar { background: var(--tb-green-600); }
+}
+
+// ---------- Preview ----------
+
+.files-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 1070;
+  display: flex;
+  flex-direction: column;
+  background: rgba(7, 26, 51, 0.92);
+  color: #fff;
+}
+
+.files-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  .icon-btn:hover { background: rgba(255, 255, 255, 0.12); }
+}
+
+.files-preview-body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 1rem 4rem 2rem;
+  @media (max-width: 575.98px) { padding: 1rem 0.5rem 2rem; }
+}
+
+.files-preview-media {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 0.35rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+.files-preview-text {
+  width: min(900px, 100%);
+  max-height: 100%;
+  margin: 0;
+  padding: 1.25rem 1.5rem;
+  overflow: auto;
+  border-radius: 0.5rem;
+  background: var(--tb-surface);
+  color: var(--tb-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.files-preview-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  &:hover { background: rgba(255, 255, 255, 0.25); }
+  &.start { left: 0.75rem; }
+  &.end { right: 0.75rem; }
+}
+
+// ---------- "Choose from Files" picker (components/FilePicker.jsx) ----------
+
+.files-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.6rem;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.files-picker-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.4rem;
+  border: 1px solid var(--tb-border);
+  border-radius: 0.6rem;
+  background: var(--tb-surface);
+  color: inherit;
+  text-align: left;
+  &:hover { background: var(--tb-row-hover); }
+  &:focus-visible { outline: 2px solid var(--tb-green-600); outline-offset: 1px; }
+  &.selected { border-color: var(--tb-green-600); background: var(--tb-picked); }
+}
+
+.files-picker-thumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 90px;
+  border-radius: 0.4rem;
+  background: var(--tb-gray-bg);
+  overflow: hidden;
+  img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+}
+
+// The tick on a chosen file.
+.files-picker-check {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--tb-green-600);
+  color: #fff;
+  font-size: 0.75rem;
+}
+
+.files-picker-name { font-size: 0.85rem; font-weight: 600; }
