@@ -486,6 +486,42 @@ $pressed: #cde0f7;
   touch-action: none;
 }
 
+// ---------- Dark mode ----------
+// The window around the document (title bar, menus, toolbar, status bar, the
+// desk) goes dark. The page itself stays white with black text, like Word and
+// Google Docs, so documents look the same as they print. Sheets and Slides use
+// this same chrome.
+[data-bs-theme='dark'] {
+  .doc-app { background: #0b1019; }
+  .doc-chrome { background: #19212d; border-bottom-color: #2f3a49; }
+  .doc-home { color: #8fb8ee; &:hover { background: #24344d; color: #b3d0f5; } }
+  .doc-title { color: #e8eef6; &:hover { border-color: #3a4657; } }
+  .doc-folder { color: #9aa5b5; &:hover { background: #263040; } }
+  .doc-menubar-btn { color: #dce3ec; &:hover, &.open { background: #263040; } }
+  .doc-menu .dropdown-item:disabled { color: #5d6877; }
+  .doc-menu-icon, .doc-menu-shortcut { color: #9aa5b5; }
+  .doc-toolbar { background: #151c27; border-top-color: #2a3442; }
+  .doc-tool-group { border-right-color: #2f3a49; }
+  .doc-tool {
+    color: #dce3ec;
+    &:hover:not(:disabled), &.open { background: #263040; }
+    &.active { background: #24426b; color: #e8eef6; }
+    &:disabled { color: #4f5a69; }
+  }
+  .doc-select, .doc-size-box input, .doc-size-caret {
+    background: #0f1520;
+    border-color: #3a4657;
+    color: #dce3ec;
+  }
+  .doc-select:hover, .doc-select.open { border-color: #5d6877; }
+  .doc-size-caret:hover, .doc-size-caret.open { background: #263040; }
+  .doc-table-grid button { background: #0f1520; border-color: #3a4657; &.on { background: #24426b; } }
+  .doc-find { background: #19212d; }
+  .doc-statusbar { background: #151c27; border-top-color: #2f3a49; color: #b9c3d0; }
+  .doc-zoom-btn { color: #b9c3d0; &:hover { background: #263040; } }
+}
+
+
 // Printing (and "Save as PDF"): only the page itself, at its real size.
 @media print {
   body:has(.doc-app) {

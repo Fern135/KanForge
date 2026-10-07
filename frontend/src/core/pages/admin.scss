@@ -1,9 +1,10 @@
 // Super admin dashboard. Chart colours come from the validated categorical
 // palette; text always uses text colours, never a series colour.
-$admin-surface: #fff;
-$admin-grid: #e6e9ee;
-$admin-ink: #1d2735;
-$admin-muted: #5f6a7a;
+// They follow dark mode through the theme's colour variables.
+$admin-surface: var(--tb-surface);
+$admin-grid: var(--tb-divider);
+$admin-ink: var(--tb-ink);
+$admin-muted: var(--tb-gray-text);
 
 .admin-tiles {
   display: grid;

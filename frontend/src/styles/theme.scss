@@ -31,6 +31,19 @@ $modal-content-border-radius: 1rem;
 $text-muted: $gray-text;
 $body-secondary-color: $gray-text;
 
+// Dark mode (see core/theme.js): Bootstrap's own dark theme, switched on by
+// data-bs-theme="dark" on <html>, in the same navy family as the light one.
+$body-bg-dark: #0f1520;
+$body-color-dark: #dce3ec;
+$body-secondary-color-dark: #9aa5b5;
+$body-tertiary-bg-dark: #19212d;
+$body-secondary-bg-dark: #232d3b;
+$border-color-dark: #2f3a49;
+$link-color-dark: #8fb8ee;
+$link-hover-color-dark: #b3d0f5;
+$primary-text-emphasis-dark: #8fb8ee;
+$input-focus-border-color-dark: $green-600;
+
 @import 'bootstrap/scss/bootstrap';
 
 :root {
@@ -42,7 +55,97 @@ $body-secondary-color: $gray-text;
   --tb-gray-bg: #{$gray-bg};
   --tb-gray-list: #{$gray-list};
   --tb-gray-text: #{$gray-text};
+  // Navy for brand surfaces with white text on them. Unlike --tb-navy (a text
+  // colour), it stays navy in dark mode.
+  --tb-brand: #{$navy};
   --tb-list-width: 85vw;
+
+  // Colours that change with dark mode. Use these rather than fixed colours for
+  // anything on screen, so both themes stay readable.
+  --tb-surface: #fff;               // panels, sidebars, tiles, cards in the apps
+  --tb-border: #dde3ea;             // panel edges
+  --tb-divider: #eef1f5;            // lines between rows
+  --tb-row-hover: #f5f8fc;          // a row under the pointer
+  --tb-selected: #dce8f7;           // selected rows and tiles
+  --tb-selected-hover: #e1ebf8;
+  --tb-picked: #e3f6ea;             // the active item in a sidebar, drop targets
+  --tb-picked-soft: #f4fbf6;
+  --tb-ink: #{$body-color};         // body text on a surface
+  --tb-strong: #{$navy};            // headings and emphasised text
+  --tb-strong-700: #{$navy-700};
+  --tb-placeholder: #b6bfca;
+  --tb-dashed: #c6ced8;             // dashed outlines ("new board", drop areas)
+  --tb-hover-tint: rgba(9, 30, 66, 0.08);
+  --tb-shadow: rgba(9, 30, 66, 0.15);
+}
+
+// The same colours in dark mode. --tb-navy and --tb-navy-700 are used for text,
+// so they turn light; brand surfaces (navbar, logo) use the fixed $navy instead.
+[data-bs-theme='dark'] {
+  color-scheme: dark;
+  --tb-navy: #e8eef6;
+  --tb-navy-700: #b3c7e0;
+  --tb-gray-bg: #232d3b;
+  --tb-gray-list: #1c2532;
+  --tb-gray-text: #9aa5b5;
+  --tb-surface: #19212d;
+  --tb-border: #2f3a49;
+  --tb-divider: #252f3d;
+  --tb-row-hover: #1f2834;
+  --tb-selected: #1f3657;
+  --tb-selected-hover: #254068;
+  --tb-picked: #1b3a2a;
+  --tb-picked-soft: #17271f;
+  --tb-ink: #dce3ec;
+  --tb-strong: #e8eef6;
+  --tb-strong-700: #b3c7e0;
+  --tb-placeholder: #5d6877;
+  --tb-dashed: #3a4657;
+  --tb-hover-tint: rgba(255, 255, 255, 0.08);
+  --tb-shadow: rgba(0, 0, 0, 0.4);
+
+  // Navy buttons and text would vanish on a dark page: a lighter blue instead.
+  .btn-primary {
+    --bs-btn-bg: #2d5b96;
+    --bs-btn-border-color: #2d5b96;
+    --bs-btn-hover-bg: #3a6cab;
+    --bs-btn-hover-border-color: #3a6cab;
+    --bs-btn-active-bg: #3a6cab;
+    --bs-btn-active-border-color: #3a6cab;
+    --bs-btn-disabled-bg: #2d5b96;
+    --bs-btn-disabled-border-color: #2d5b96;
+  }
+  .btn-outline-primary {
+    --bs-btn-color: #8fb8ee;
+    --bs-btn-border-color: #4a76ad;
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: #2d5b96;
+    --bs-btn-hover-border-color: #2d5b96;
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: #2d5b96;
+    --bs-btn-active-border-color: #2d5b96;
+    --bs-btn-disabled-color: #8fb8ee;
+    --bs-btn-disabled-border-color: #4a76ad;
+  }
+  .btn-light {
+    --bs-btn-color: #dce3ec;
+    --bs-btn-bg: #263040;
+    --bs-btn-border-color: #263040;
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: #303c4f;
+    --bs-btn-hover-border-color: #303c4f;
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: #303c4f;
+    --bs-btn-active-border-color: #303c4f;
+    --bs-btn-disabled-color: #9aa5b5;
+    --bs-btn-disabled-bg: #263040;
+    --bs-btn-disabled-border-color: #263040;
+  }
+  .text-primary { color: #8fb8ee !important; }
+  .bg-white { background-color: var(--tb-surface) !important; }
+  .bg-light { background-color: var(--tb-gray-bg) !important; }
+  .text-bg-light { background-color: var(--tb-gray-bg) !important; color: var(--tb-ink) !important; }
+  .progress { --bs-progress-bg: #2a3443; }
 }
 
 @media (min-width: 576px) {
@@ -142,14 +245,14 @@ body { -webkit-font-smoothing: antialiased; }
   overflow: hidden;
   &:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(9, 30, 66, 0.25); color: #fff; }
   &.tile-new {
-    background: #fff;
-    color: $gray-text;
-    border: 2px dashed #c6ced8;
+    background: var(--tb-surface);
+    color: var(--tb-gray-text);
+    border: 2px dashed var(--tb-dashed);
     box-shadow: none;
     align-items: center;
     justify-content: center;
-    &:hover { color: $navy; border-color: $green-600; }
-    &:disabled { opacity: 0.6; cursor: not-allowed; transform: none; color: $gray-text; border-color: #c6ced8; }
+    &:hover { color: var(--tb-navy); border-color: $green-600; }
+    &:disabled { opacity: 0.6; cursor: not-allowed; transform: none; color: var(--tb-gray-text); border-color: var(--tb-dashed); }
   }
 }
 
@@ -162,12 +265,12 @@ body { -webkit-font-smoothing: antialiased; }
   height: 120px;
   padding: 1rem;
   border-radius: $border-radius-lg;
-  background: #fff;
-  color: $navy;
+  background: var(--tb-surface);
+  color: var(--tb-navy);
   text-decoration: none;
-  box-shadow: 0 4px 12px rgba(9, 30, 66, 0.1);
+  box-shadow: 0 4px 12px var(--tb-shadow);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
-  &:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(9, 30, 66, 0.2); color: $navy; }
+  &:hover { transform: translateY(-2px); box-shadow: 0 8px 20px var(--tb-shadow); color: var(--tb-navy); }
 }
 // Lets a flex child shrink below its content, so long names truncate.
 .min-w-0 { min-width: 0; }
@@ -176,7 +279,7 @@ body { -webkit-font-smoothing: antialiased; }
 .app-tile-soon {
   position: relative;
   box-shadow: none;
-  border: 2px dashed $gray-list;
+  border: 2px dashed var(--tb-gray-list);
   background: transparent;
   cursor: default;
   &:hover { transform: none; box-shadow: none; }
@@ -221,7 +324,7 @@ $backgrounds: (
   border-radius: $border-radius-sm;
   border: 3px solid transparent;
   cursor: pointer;
-  &.active { border-color: $green; box-shadow: 0 0 0 2px $navy; }
+  &.active { border-color: $green; box-shadow: 0 0 0 2px var(--tb-navy); }
 }
 
 // Board page
@@ -275,7 +378,7 @@ $backgrounds: (
   max-height: 100%;
   display: flex;
   flex-direction: column;
-  background: $gray-list;
+  background: var(--tb-gray-list);
   border-radius: $border-radius-lg;
   scroll-snap-align: center;
   box-shadow: 0 1px 0 rgba(9, 30, 66, 0.15);
@@ -287,9 +390,9 @@ $backgrounds: (
   gap: 0.25rem;
   padding: 0.6rem 0.6rem 0.3rem 0.85rem;
   font-weight: 700;
-  color: $navy;
+  color: var(--tb-navy);
   .list-title { flex: 1; cursor: pointer; overflow-wrap: anywhere; }
-  .count { font-size: 0.75rem; color: $gray-text; font-weight: 600; }
+  .count { font-size: 0.75rem; color: var(--tb-gray-text); font-weight: 600; }
 }
 .list-cards {
   flex: 1;
@@ -317,7 +420,7 @@ $backgrounds: (
     &:hover, &:focus-visible { background: #fff; color: $navy-900; }
   }
   form {
-    background: $gray-list;
+    background: var(--tb-gray-list);
     border-radius: $border-radius-lg;
     padding: 0.5rem !important;
   }
@@ -325,12 +428,12 @@ $backgrounds: (
 
 // Text on light surfaces: never lighter than this.
 .btn-add-card {
-  color: $navy-700;
-  &:hover, &:focus-visible { background: rgba(9, 30, 66, 0.08); color: $navy-900; }
+  color: var(--tb-navy-700);
+  &:hover, &:focus-visible { background: var(--tb-hover-tint); color: var(--tb-navy); }
 }
 
 .task-card {
-  background: #fff;
+  background: var(--tb-surface);
   border-radius: $border-radius;
   padding: 0.55rem 0.7rem;
   margin-bottom: 0.5rem;
@@ -341,14 +444,14 @@ $backgrounds: (
   &:hover { border-color: rgba($green-600, 0.7); }
   &:focus-visible { outline: none; border-color: $green-600; }
   &.is-dragging { box-shadow: 0 10px 24px rgba(9, 30, 66, 0.3); transform: rotate(2deg); }
-  .card-title { font-size: 0.93rem; overflow-wrap: anywhere; color: $body-color; }
+  .card-title { font-size: 0.93rem; overflow-wrap: anywhere; color: var(--tb-ink); }
   .card-badges {
     display: flex;
     flex-wrap: wrap;
     gap: 0.6rem;
     margin-top: 0.35rem;
     font-size: 0.75rem;
-    color: $gray-text;
+    color: var(--tb-gray-text);
   }
 }
 
@@ -391,7 +494,7 @@ $label-colors: (
   font-weight: 600;
   border: 0;
   &.selectable { opacity: 0.55; }
-  &.selectable.selected { opacity: 1; box-shadow: 0 0 0 2px $navy; }
+  &.selectable.selected { opacity: 1; box-shadow: 0 0 0 2px var(--tb-navy); }
 }
 
 // Modals (React controlled, Bootstrap markup)
@@ -403,13 +506,13 @@ $label-colors: (
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: $gray-text;
+  color: var(--tb-gray-text);
   margin-bottom: 0.5rem;
 }
 .description-view {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  background: $gray-bg;
+  background: var(--tb-gray-bg);
   border-radius: $border-radius;
   padding: 0.6rem 0.75rem;
   cursor: pointer;
@@ -422,8 +525,8 @@ $label-colors: (
   gap: 0.6rem;
   .comment-body {
     flex: 1;
-    background: #fff;
-    border: 1px solid #dfe3e8;
+    background: var(--tb-surface);
+    border: 1px solid var(--tb-border);
     border-radius: $border-radius;
     padding: 0.45rem 0.7rem;
     white-space: pre-wrap;
@@ -434,17 +537,18 @@ $label-colors: (
 .icon-btn {
   background: transparent;
   border: 0;
-  color: $gray-text;
+  color: var(--tb-gray-text);
   padding: 0.25rem 0.45rem;
   border-radius: $border-radius-sm;
-  &:hover { background: rgba(9, 30, 66, 0.08); color: $navy; }
+  &:hover { background: var(--tb-hover-tint); color: var(--tb-navy); }
 }
 
 .dropdown-menu.show { display: block; }
 
 .toast-stack {
   position: fixed;
-  bottom: 1rem;
+  // Above the light/dark switch in the corner.
+  bottom: 4.25rem;
   right: 1rem;
   left: 1rem;
   z-index: 2000;
@@ -455,6 +559,33 @@ $label-colors: (
   pointer-events: none;
   @media (min-width: 576px) { left: auto; align-items: flex-end; }
   .toast { pointer-events: auto; }
+}
+
+// The light/dark mode switch (core/components/ThemeToggle.jsx), in the bottom
+// right corner of every page.
+.theme-toggle {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1040;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--tb-border);
+  border-radius: 50%;
+  background: var(--tb-surface);
+  color: var(--tb-navy);
+  box-shadow: 0 2px 8px var(--tb-shadow);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  &:hover { transform: translateY(-1px); box-shadow: 0 4px 14px var(--tb-shadow); }
+  &:focus-visible { outline: 2px solid $green-600; outline-offset: 2px; }
+  // The Office editors have a status bar along the bottom: sit just above it.
+  body:has(.doc-statusbar) & { bottom: 2.5rem; }
+  // Out of the way of a slideshow, and never printed.
+  body:has(.slide-show) & { display: none; }
+  @media print { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -485,8 +616,8 @@ $label-colors: (
   font-size: 0.9rem;
   text-align: left;
   &:hover { background: var(--tb-gray-bg); }
-  &.active { background: #e3f6ea; font-weight: 600; }
-  &.drop-over { background: #e3f6ea; box-shadow: inset 0 0 0 2px var(--tb-green-600); }
+  &.active { background: var(--tb-picked); font-weight: 600; }
+  &.drop-over { background: var(--tb-picked); box-shadow: inset 0 0 0 2px var(--tb-green-600); }
   &:hover .folder-menu-btn, &:focus-within .folder-menu-btn { opacity: 1; }
 }
 
@@ -535,7 +666,7 @@ $label-colors: (
   background: none;
   color: var(--tb-gray-text);
   opacity: 0;
-  &:hover { background: #dde3ea; }
+  &:hover { background: var(--tb-border); }
   // Touch screens have no hover, so keep the menu visible there.
   @media (hover: none) { opacity: 1; }
 }

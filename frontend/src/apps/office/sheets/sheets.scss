@@ -247,6 +247,28 @@ $gridline: #e1e1e1;
 .sheet-find { z-index: 20; }
 .sheet-context { min-width: 14rem; z-index: 1060; }
 
+// Dark mode: the formula bar and sheet tabs follow the dark window (see
+// docs.scss). The grid, its headings and cells stay light, like the page in
+// Docs, so cell colours look as they were chosen.
+[data-bs-theme='dark'] {
+  .sheet-home { color: #6fcf97; &:hover { background: #1b3a2a; color: #9be3b8; } }
+  .sheet-app .doc-tool.active { background: #1b3a2a; color: #9be3b8; }
+  .sheet-formula-bar { background: #19212d; border-top-color: #2f3a49; }
+  .sheet-namebox, .sheet-fx { border-right-color: #2f3a49; }
+  .sheet-fx { color: #9aa5b5; }
+  .sheet-namebox, .sheet-formula { background: #19212d; color: #dce3ec; }
+  .sheet-tabs { background: #151c27; border-top-color: #2f3a49; }
+  .sheet-tab-add { border-right-color: #2f3a49; color: #b9c3d0; &:hover { background: #263040; } }
+  .sheet-tab {
+    border-right-color: #2f3a49;
+    color: #b9c3d0;
+    &:hover { background: #263040; }
+    &.active { background: #0f1520; color: #9be3b8; }
+  }
+  .sheet-tab-rename { background: #0f1520; color: #dce3ec; }
+}
+
+
 // Printing: only the table built for printing (printSheet.js).
 .sheet-print { display: none; }
 @media print {

@@ -9,6 +9,7 @@ import { ROUTER_BASENAME } from './core/workspaceUrl';
 import { AuthProvider } from './core/context/AuthContext';
 import { WorkspaceProvider } from './core/context/WorkspaceContext';
 import { ToastProvider } from './core/context/ToastContext';
+import ThemeToggle from './core/components/ThemeToggle';
 
 // FontAwesome CSS is bundled above, so it doesn't need to inject a <style> tag at runtime.
 config.autoAddCss = false;
@@ -23,6 +24,8 @@ createRoot(document.getElementById('root')).render(
           </WorkspaceProvider>
         </AuthProvider>
       </ToastProvider>
+      {/* Light/dark mode switch, on every page. */}
+      <ThemeToggle />
     </BrowserRouter>
   </StrictMode>,
 );
