@@ -6,7 +6,7 @@ import AppNavbar from './core/components/AppNavbar';
 import Spinner from './core/components/Spinner';
 import Login from './core/pages/Login';
 import Register from './core/pages/Register';
-import { APPS } from './apps';
+import { APPS, PUBLIC_PAGES } from './apps';
 import { siteUrl } from './core/site';
 import {
   WORKSPACE_SLUG, goTo, isInvitePath, isWorkspacePath, lastWorkspace, workspaceUrl,
@@ -175,6 +175,10 @@ function AccountRoutes() {
       <Route path="/invite" element={<Protected><JoinWorkspace /></Protected>} />
       <Route path="/account" element={<Protected><Account /></Protected>} />
       <Route path="/admin" element={<Protected><AdminOnly><Admin /></AdminOnly></Protected>} />
+      {/* Open to anyone, signed in or not (public file links). */}
+      {PUBLIC_PAGES.map(({ path, Page }) => (
+        <Route key={path} path={path} element={<Suspense fallback={<Spinner fullscreen />}><Page /></Suspense>} />
+      ))}
       {[...APPS.map((a) => a.id), 'b'].map((id) => (
         <Route key={id} path={`/${id}/*`} element={<Protected><ChooseWorkspace /></Protected>} />
       ))}

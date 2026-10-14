@@ -68,12 +68,32 @@ function readEnv() {
   return env;
 }
 
+const rand = (bytes) => randomBytes(bytes).toString('hex');
+
+// Secrets for the bundled object storage (Garage), which holds the Files app's
+// files. The access key id uses Garage's own format: "GK" and 24 hex characters.
+const storageEnv = () => `
+# Object storage for the Files app (Garage, running in Docker on this machine).
+# To use a hosted S3-compatible service instead (Backblaze B2, Cloudflare R2,
+# AWS S3...), set S3_ENDPOINT, S3_REGION, S3_BUCKET and the two keys to its values.
+GARAGE_RPC_SECRET=${rand(32)}
+S3_BUCKET=kanforge-files
+S3_ACCESS_KEY_ID=GK${rand(12)}
+S3_SECRET_ACCESS_KEY=${rand(32)}
+`;
+
 function setupEnv() {
   if (existsSync('.env')) {
-    console.log('.env already exists, leaving it untouched.');
+    // Installs from before the Files app get its storage secrets added once.
+    // Nothing already in the file is changed.
+    if (!/^GARAGE_RPC_SECRET=/m.test(readFileSync('.env', 'utf8'))) {
+      writeFileSync('.env', storageEnv(), { flag: 'a' });
+      console.log('Added object storage secrets for the Files app to .env.');
+    } else {
+      console.log('.env already exists, leaving it untouched.');
+    }
     return;
   }
-  const rand = (bytes) => randomBytes(bytes).toString('hex');
   const content = `COMPOSE_PROJECT_NAME=kanforge
 HTTP_PORT=8080
 HTTPS_PORT=8443
@@ -93,7 +113,7 @@ JWT_ACCESS_SECRET=${rand(64)}
 ACCESS_TOKEN_TTL_SECONDS=600
 REFRESH_TOKEN_TTL_DAYS=14
 LOG_LEVEL=info
-`;
+${storageEnv()}`;
   writeFileSync('.env', content, { mode: 0o600 });
   console.log('Created .env with freshly generated secrets (mode 600).');
 }
@@ -140,7 +160,7 @@ const commands = {
     setup();
     // The prod nginx isn't part of dev mode; stop it so only one frontend runs.
     docker([...PROD, 'rm', '-sf', 'web'], { quiet: true, allowFail: true });
-    docker([...DEV, 'up', '-d', '--build', '--wait', 'mongo', 'redis', 'migrate', 'api', 'web-dev']);
+    docker([...DEV, 'up', '-d', '--build', '--wait', 'mongo', 'redis', 'garage', 'migrate', 'api', 'web-dev']);
     console.log(green(`\n  ${bold('Dev mode')} running with hot reload: http://localhost:5173\n`));
   },
 
@@ -205,7 +225,7 @@ const commands = {
     requireDocker();
     setup();
     docker([...PROD, '--profile', 'test', 'build', 'api-test']);
-    docker([...PROD, 'up', '-d', '--wait', 'mongo', 'redis']);
+    docker([...PROD, 'up', '-d', '--wait', 'mongo', 'redis', 'garage']);
     docker([...PROD, '--profile', 'test', 'run', '--rm', 'api-test']);
   },
 };

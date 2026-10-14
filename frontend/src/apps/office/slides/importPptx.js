@@ -163,7 +163,18 @@ function unzipPptx(bytes) {
   return { files, tooBig };
 }
 
-export async function importPptx(file) {
+// Uploads a picture to Office's image storage, as an imported slide needs.
+async function uploadPicture(bytes, mime) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  const { imageId } = await uploadBase64(btoa(bin), mime);
+  return { imageId };
+}
+
+// options.maxSlides: how many slides to read (the Files app's previews only need the first).
+// options.storePicture(bytes, mime): what to do with each picture; returns the
+// fields the image element gets ({ imageId } by default, after uploading it).
+export async function importPptx(file, { maxSlides = LIMITS.slides, storePicture = uploadPicture } = {}) {
   if (file.size > MAX_FILE) throw new Error('PowerPoint files can be up to 100 MB.');
   let unzipped;
   try {
@@ -193,10 +204,10 @@ export async function importPptx(file) {
     .map((s) => presRels.get(s.getAttributeNS(R, 'id'))?.path)
     .filter(Boolean);
   if (!slidePaths.length) throw new Error('This presentation has no slides.');
-  if (slidePaths.length > LIMITS.slides) warnings.add(`Only the first ${LIMITS.slides} slides were opened.`);
+  if (slidePaths.length > maxSlides && maxSlides === LIMITS.slides) warnings.add(`Only the first ${LIMITS.slides} slides were opened.`);
 
   const slides = [];
-  for (const slidePath of slidePaths.slice(0, LIMITS.slides)) {
+  for (const slidePath of slidePaths.slice(0, maxSlides)) {
     const xml = parse(files, slidePath);
     const slideRels = rels(files, slidePath);
     const layoutPath = [...slideRels.values()].find((r) => r.type.endsWith('/slideLayout'))?.path;
@@ -252,11 +263,7 @@ export async function importPptx(file) {
             continue;
           }
           try {
-            let bin = '';
-            const bytes = files[media];
-            for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-            const { imageId } = await uploadBase64(btoa(bin), IMAGE_TYPES[ext]);
-            elements.push({ ...el, type: 'image', imageId });
+            elements.push({ ...el, type: 'image', ...(await storePicture(files[media], IMAGE_TYPES[ext])) });
           } catch {
             warnings.add('Some pictures couldn\'t be uploaded (too large, or over your image storage limit).');
           }

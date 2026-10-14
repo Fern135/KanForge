@@ -16,15 +16,15 @@
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  background: #fff;
-  border-right: 1px solid #dde3ea;
+  background: var(--tb-surface);
+  border-right: 1px solid var(--tb-border);
   @media (min-width: 768px) {
     width: 300px;
     overflow-y: auto;
   }
   @media (max-width: 767.98px) {
     border-right: 0;
-    border-bottom: 1px solid #dde3ea;
+    border-bottom: 1px solid var(--tb-border);
   }
 }
 
@@ -32,7 +32,7 @@
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  background: #fff;
+  background: var(--tb-surface);
 }
 
 .office-toolbar {
@@ -41,7 +41,7 @@
   flex-wrap: wrap;
   gap: 0.75rem;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #eef1f5;
+  border-bottom: 1px solid var(--tb-divider);
 }
 
 .office-list { padding: 0 0.5rem 2rem; }
@@ -52,8 +52,8 @@
   align-items: center;
   gap: 1rem;
   padding: 0.45rem 0.5rem;
-  border-bottom: 1px solid #f0f2f5;
-  &:hover:not(.office-head) { background: #f5f8fc; }
+  border-bottom: 1px solid var(--tb-divider);
+  &:hover:not(.office-head) { background: var(--tb-row-hover); }
   @media (min-width: 576px) { grid-template-columns: minmax(0, 1fr) 7rem auto; }
   @media (min-width: 768px) { grid-template-columns: minmax(0, 1fr) 7rem 5rem auto; }
   @media (min-width: 992px) {
@@ -61,7 +61,7 @@
   }
 }
 
-.office-row.picked { background: #eaf1fb; &:hover { background: #e1ebf8; } }
+.office-row.picked { background: var(--tb-selected); &:hover { background: var(--tb-selected-hover); } }
 .office-check { flex-shrink: 0; cursor: pointer; }
 
 // The bar that appears when documents are ticked.
@@ -76,8 +76,8 @@
   margin: 0.5rem 0.5rem 0;
   padding: 0.4rem 0.6rem;
   border-radius: 0.5rem;
-  background: #e8f0fe;
-  color: #1f3864;
+  background: var(--tb-selected);
+  color: var(--tb-strong);
   font-size: 0.9rem;
 }
 
@@ -90,10 +90,13 @@
 }
 
 .office-name {
-  color: #202124;
+  color: var(--tb-ink);
   font-weight: 500;
   text-decoration: none;
   &:hover { color: #2b579a; text-decoration: underline; }
 }
 
 .min-w-0 { min-width: 0; }
+
+// Word's blue is too dark to read on a dark page.
+[data-bs-theme='dark'] .office-name:hover { color: #8fb8ee; }

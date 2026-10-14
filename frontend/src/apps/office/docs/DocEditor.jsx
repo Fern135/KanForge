@@ -28,6 +28,8 @@ import { useToast } from '../../../core/context/ToastContext';
 import { useWorkspace } from '../../../core/context/WorkspaceContext';
 import ViewOnlyNotice from '../../../core/components/ViewOnlyNotice';
 import { downloadBlob } from '../../../core/utils/download';
+import { acceptImages, acceptExtensions } from '../../files/utils/pick';
+import { useFilesPicker } from '../filesPicker';
 import './docs.scss';
 
 const STATUS = { saved: 'Saved', unsaved: 'Editing…', saving: 'Saving…', error: 'Not saved', conflict: 'Not saved' };
@@ -60,6 +62,8 @@ const imageFiles = (dataTransfer) => [...(dataTransfer?.files || [])].filter((f)
 function DocWorkspace({ sync }) {
   const navigate = useNavigate();
   const toast = useToast();
+  // Pictures and Word documents can also come from the Files app.
+  const [pickFromFiles, filesPicker] = useFilesPicker();
   const [zoom, setZoom] = usePref('zoom', 100);
   const [showRuler, setShowRuler] = usePref('ruler', true);
   const [modal, setModal] = useState(null);
@@ -187,6 +191,9 @@ function DocWorkspace({ sync }) {
     clearFormatting: () => editor.chain().focus().unsetAllMarks().clearNodes().run(),
     link: () => setModal('link'),
     image: () => imageInput.current?.click(),
+    imageFromFiles: pickFromFiles && (() => pickFromFiles({
+      title: 'Insert a picture from Files', accept: acceptImages, multiple: true, confirmLabel: 'Insert', onPick: (files) => insertImages(files),
+    })),
     find: () => setFind({ replace: true }),
     pageSetup: () => setModal('pageSetup'),
     toggleRuler: () => setShowRuler(!showRuler),
@@ -212,6 +219,9 @@ function DocWorkspace({ sync }) {
       }
     },
     importDocx: () => docxInput.current?.click(),
+    importDocxFromFiles: pickFromFiles && (() => pickFromFiles({
+      title: 'Open a Word document from Files', accept: acceptExtensions('docx'), confirmLabel: 'Open', onPick: ([file]) => importDocxFile(file),
+    })),
     downloadDocx: async () => {
       try {
         const { exportDocx } = await import('./exportDocx');
@@ -283,10 +293,8 @@ function DocWorkspace({ sync }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [locked]);
 
-  const onImportDocx = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  // Opens a .docx (from the computer or from Files) as a new document.
+  const importDocxFile = async (file) => {
     try {
       const { importDocx } = await import('./importDocx');
       const result = await importDocx(file);
@@ -297,6 +305,12 @@ function DocWorkspace({ sync }) {
     } catch (err) {
       toast.error(errorMessage(err, 'Could not open that Word document'));
     }
+  };
+
+  const onImportDocx = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) importDocxFile(file);
   };
 
   if (!editor) return <Spinner fullscreen />;
@@ -386,6 +400,7 @@ function DocWorkspace({ sync }) {
       <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple className="d-none"
         onChange={(e) => { insertImages([...e.target.files]); e.target.value = ''; }} />
       <input ref={docxInput} type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="d-none" onChange={onImportDocx} />
+      {filesPicker}
 
       {modal === 'pageSetup' && <PageSetupModal settings={settings} onSave={sync.setSettings} onClose={() => setModal(null)} />}
       {modal === 'link' && <LinkModal editor={editor} onClose={() => setModal(null)} />}

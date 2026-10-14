@@ -129,7 +129,7 @@ describe('workspaces and tenant isolation', () => {
     assert.equal(office.status, 403);
     assert.equal(office.body.error.code, 'PLAN_REQUIRED');
     const { apps, locked } = (await as(alice, 'acme').get('/api/apps').expect(200)).body;
-    assert.deepEqual(apps.map((a) => a.id), ['boards', 'notes']);
+    assert.deepEqual(apps.map((a) => a.id), ['boards', 'notes', 'files']);
     assert.deepEqual(locked.map((a) => a.id), ['office']);
     assert.deepEqual((await as(alice, 'acme').get('/api/workspace')).body.limits, { maxBoardsPerUser: 100 });
     await as(alice, 'acme').patch('/api/workspace/apps/office').send({ enabled: true }).expect(403);

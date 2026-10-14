@@ -5,6 +5,7 @@ const logger = require('./core/utils/logger');
 const { connectMongo, disconnectMongo } = require('./core/db/mongo');
 const { connectRedis, disconnectRedis } = require('./core/db/redis');
 const { createApp } = require('./app');
+const manifests = require('./apps');
 
 async function main() {
   await Promise.all([connectMongo(), connectRedis()]);
@@ -16,6 +17,8 @@ async function main() {
   server.headersTimeout = 15_000;
   server.requestTimeout = 30_000;
   server.keepAliveTimeout = 65_000;
+  // Apps' background work (e.g. the Files sweeper).
+  for (const m of manifests) m.start?.();
 
   let shuttingDown = false;
   const shutdown = (signal) => {
@@ -23,6 +26,7 @@ async function main() {
     shuttingDown = true;
     logger.info({ signal }, 'Shutting down');
     const force = setTimeout(() => process.exit(1), 10_000).unref();
+    for (const m of manifests) m.stop?.();
     server.close(async () => {
       await Promise.allSettled([disconnectMongo(), disconnectRedis()]);
       clearTimeout(force);

@@ -7,6 +7,7 @@ import {
   faHashtag, faRotate, faLayerGroup,
 } from '@fortawesome/free-solid-svg-icons';
 import { DropMenu } from '../docs/ui';
+import { sourceItem } from '../filesPicker';
 import {
   ANIMATIONS, CHARTS, LAYOUTS, SHAPES, SIZES, SPACINGS, THEMES, TRANSITIONS,
 } from './model';
@@ -25,7 +26,7 @@ export default function SlideMenuBar({ a, deck, sel }) {
         { label: 'Open…', icon: faFolderOpen, onClick: a.openOffice },
         { label: 'Make a copy', icon: faCopy, onClick: a.copyDoc },
         'divider',
-        { label: 'Open PowerPoint file…', icon: faFileImport, onClick: a.importPptx },
+        sourceItem({ label: 'Open PowerPoint file', icon: faFileImport, computer: a.importPptx, files: a.importPptxFromFiles }),
         {
           label: 'Download',
           icon: faDownload,
@@ -79,7 +80,7 @@ export default function SlideMenuBar({ a, deck, sel }) {
         { label: 'New slide', icon: faFileCirclePlus, items: LAYOUTS.map((l) => ({ label: l.label, onClick: () => a.newSlide(l.id) })) },
         'divider',
         { label: 'Text box', icon: faFont, onClick: a.insertText },
-        { label: 'Image…', icon: faImage, onClick: a.insertImage },
+        sourceItem({ label: 'Image', icon: faImage, computer: a.insertImage, files: a.insertImageFromFiles }),
         { label: 'Shape', icon: faShapes, items: SHAPES.map((s) => ({ label: s.label, onClick: () => a.insertShape(s.id) })) },
         { label: 'Table', icon: faTable, items: [[2, 2], [3, 3], [4, 3], [4, 4], [5, 4], [6, 5]].map(([r, c]) => ({ label: `${c} × ${r}`, onClick: () => a.insertTable(r, c) })) },
         { label: 'Chart', icon: faChartColumn, items: CHARTS.map((c) => ({ label: c.label, onClick: () => a.insertChart(c.id) })) },

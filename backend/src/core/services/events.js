@@ -8,6 +8,9 @@ const logger = require('../utils/logger');
 //   user.deleted  (userId)  the account is being deleted: remove what it owns in
 //                           every workspace (already removed from each one through
 //                           workspace.memberRemoved)
+//   workspace.deleting (workspaceId)  the workspace is about to be deleted, run
+//                           inside it: clean up what lives outside the database
+//                           (its records are deleted right after)
 const handlers = new Map();
 
 function on(event, handler) {

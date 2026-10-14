@@ -31,7 +31,7 @@ describe('people and app access', () => {
   it('keeps People to platform admins, and asks for the password before changes', async () => {
     await api().get('/api/admin/people').set(auth(member.token)).expect(403);
     const { body } = await api().get('/api/admin/people').set(auth(admin.token)).expect(200);
-    assert.deepEqual(body.apps.map((a) => a.id), ['boards', 'notes', 'office']);
+    assert.deepEqual(body.apps.map((a) => a.id), ['boards', 'notes', 'office', 'files']);
     assert.ok(body.workspaces.some((w) => w.id === workspaceId));
     const me = body.people.find((p) => p.id === admin.user.id);
     assert.deepEqual({ role: me.role, access: me.access, workspaces: me.workspaces }, { role: 'admin', access: {}, workspaces: ['Test'] });
@@ -76,7 +76,7 @@ describe('people and app access', () => {
 
     assert.deepEqual((await set({ notes: 'none' }).expect(200)).body.access, { notes: 'none' });
     assert.equal((await api().get('/api/notes').set(auth(member.token)).expect(403)).body.error.code, 'NO_ACCESS');
-    assert.deepEqual((await apps()).map((a) => a.id), ['boards', 'office']);
+    assert.deepEqual((await apps()).map((a) => a.id), ['boards', 'office', 'files']);
 
     await set({ notes: 'view' }).expect(200);
     await api().get('/api/notes').set(auth(member.token)).expect(200);

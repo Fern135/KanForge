@@ -25,11 +25,24 @@ export const APPS = [
     icon: faFileWord,
     Routes: lazy(() => import('./office/routes')),
   },
+  {
+    id: 'files',
+    name: 'Files',
+    icon: faFolder,
+    Routes: lazy(() => import('./files/routes')),
+    // Its section of the platform admin page (storage limits, public links).
+    AdminSection: lazy(() => import('./files/admin/AdminFiles')),
+  },
+];
+
+// Pages that open without signing in or choosing a workspace, at /app/<path>.
+// Public file links live here: /app/s/<token>.
+export const PUBLIC_PAGES = [
+  { path: '/s/:token', Page: lazy(() => import('./files/pages/PublicShare')) },
 ];
 
 // Apps that are announced but not built yet. They show as "Coming soon" on the
 // home screen and in the app switcher, and don't link anywhere.
 export const UPCOMING_APPS = [
-  { id: 'files', name: 'Files', icon: faFolder },
   { id: 'mail', name: 'Mail', icon: faEnvelope },
 ];

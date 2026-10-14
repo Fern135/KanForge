@@ -71,10 +71,15 @@ function createApp() {
   // Every other request is counted before any body is parsed, including unknown paths.
   app.use(limiters.api);
 
-  // Only accept JSON bodies. Anything else is refused before it's parsed.
+  // Only accept JSON bodies. Anything else is refused before it's parsed. The
+  // one exception is the paths an app declares as streamPaths (file upload
+  // parts), which take raw bytes and stream them on without parsing.
+  const streamPaths = manifests.flatMap((m) => (m.streamPaths || []).map((re) => ({ prefix: `/api/${m.id}`, re })));
+  const isStreamPath = (req) => req.is('application/octet-stream')
+    && streamPaths.some(({ prefix, re }) => req.path.startsWith(prefix) && re.test(req.path.slice(prefix.length)));
   app.use((req, _res, next) => {
     const hasBody = Number(req.get('content-length') || 0) > 0 || req.get('transfer-encoding');
-    if (BODY_METHODS.has(req.method) && hasBody && !req.is('application/json')) {
+    if (BODY_METHODS.has(req.method) && hasBody && !req.is('application/json') && !isStreamPath(req)) {
       return next(Object.assign(new Error('Unsupported media type'), { status: 415, expose: true, code: 'UNSUPPORTED_MEDIA' }));
     }
     next();
@@ -93,7 +98,18 @@ function createApp() {
   app.use('/api/auth', authRouter(limiters));
   app.use('/api/workspaces', requireAuth, workspacesRouter({ limiters }));
   app.use('/api/invites', requireAuth, invitesRouter({ limiters }));
+  // Apps' own platform admin settings (e.g. Files storage limits), before the
+  // core admin routes so they aren't shadowed.
+  for (const m of manifests.filter((x) => x.createAdminRouter)) {
+    app.use(`/api/admin/apps/${m.id}`, requireAuth, requireAdmin, m.createAdminRouter({ limiters }));
+  }
   app.use('/api/admin', requireAuth, requireAdmin, adminRouter({ limiters, apps: manifests.map(({ id, name }) => ({ id, name })) }));
+
+  // Apps' routes that work without signing in (e.g. public file links). They
+  // check their own signed tokens and pick the workspace from them.
+  for (const m of manifests.filter((x) => x.createPublicRouter)) {
+    app.use(`/api/public/${m.id}`, m.createPublicRouter({ limiters }));
+  }
 
   // Everything below runs inside the workspace named by the X-Workspace header.
   app.use('/api/workspace', requireAuth, requireWorkspace, currentWorkspaceRouter({ limiters, appState }));

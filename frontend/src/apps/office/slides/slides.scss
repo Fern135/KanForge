@@ -284,6 +284,23 @@ $select: #2b7cd3;
 
 .slides-print { display: none; }
 
+// Dark mode: the slide list, speaker notes and dialogs follow the dark window
+// (see docs.scss). Slides themselves keep their own colours.
+[data-bs-theme='dark'] {
+  .slide-home { color: #f0906f; &:hover { background: #3a2119; color: #f5b29a; } }
+  .slide-panel { background: #151c27; border-right-color: #2f3a49; }
+  .slide-thumb:hover .slide-frame { border-color: #5d6877; }
+  .slide-thumb-num { color: #9aa5b5; }
+  .slide-add { border-color: #3a4657; color: #9aa5b5; }
+  .slide-stage { background: #0b1019; }
+  .slide-notes { background: #19212d; border-top-color: #2f3a49; textarea { background: #19212d; color: #dce3ec; } }
+  .slide-notes-btn.active { background: #263040; }
+  .slide-shape-pick, .slide-icon-btn { color: #dce3ec; &:hover { background: #263040; } }
+  .slide-chart-preview, .slide-bg-preview { border-color: #2f3a49; }
+  .slide-present-btn { color: #f0906f; }
+}
+
+
 @media print {
   body.slides-printing {
     background: #fff !important;
