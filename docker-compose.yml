@@ -26,6 +26,8 @@ x-api-env: &api-env
   LOG_LEVEL: ${LOG_LEVEL:-info}
   # Plan for new workspaces: self-hosted (every app, no limits), standard or plus.
   DEFAULT_PLAN: ${DEFAULT_PLAN:-self-hosted}
+  # Whether anyone can create an account from the sign-in page (off by default).
+  ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
   # Object storage for the Files app: the garage service below by default, or any
   # S3-compatible service (set S3_ENDPOINT and S3_REGION in .env to use one).
   S3_ENDPOINT: ${S3_ENDPOINT:-http://garage:3900}
@@ -198,6 +200,8 @@ services:
       MONGO_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_APP_DB}_test?authSource=admin
       REDIS_URL: redis://app:${REDIS_PASSWORD}@redis:6379/1
       COOKIE_SECURE: "true"
+      # The tests sign up their accounts.
+      ALLOW_REGISTRATION: "true"
       # Test files go under their own prefix in the bucket, apart from real ones.
       S3_KEY_PREFIX: test/
     command: ["npm", "test"]

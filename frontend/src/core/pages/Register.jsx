@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEnvelope, faLock, faUser } from '@fortawesome/free-solid-svg-icons';
 import { useAuth } from '../context/AuthContext';
+import { authApi } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import AuthLayout from './AuthLayout';
 
@@ -27,7 +28,13 @@ export default function Register() {
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Whether this server lets people create their own account: undefined while checking.
+  const [open, setOpen] = useState(undefined);
   const score = useMemo(() => strength(form.password), [form.password]);
+
+  useEffect(() => {
+    authApi.registration().then((d) => setOpen(Boolean(d.open))).catch(() => setOpen(true));
+  }, []);
   const [label, variant] = LEVELS[score];
   const valid = form.name.trim() && form.email && form.password.length >= 12 && form.password === form.confirm;
 
@@ -47,6 +54,15 @@ export default function Register() {
   };
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  if (open === false) {
+    return (
+      <AuthLayout title="Sign-up is turned off" subtitle="New accounts on this server are added by an administrator.">
+        <p className="mb-4">Ask an administrator to add you. They'll give you a temporary password to sign in with.</p>
+        <Link to={`/login${search}`} className="btn btn-primary w-100 py-2 fw-semibold">Go to sign in</Link>
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout title="Create your account" subtitle="Boards, lists and cards, organized your way.">

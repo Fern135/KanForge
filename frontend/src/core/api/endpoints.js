@@ -3,6 +3,7 @@ import api from './client';
 const data = (p) => p.then((r) => r.data);
 
 export const authApi = {
+  registration: () => data(api.get('/auth/registration')),
   register: (body) => data(api.post('/auth/register', body)),
   login: (body) => data(api.post('/auth/login', body)),
   loginWithPin: (body) => data(api.post('/auth/login-pin', body)),

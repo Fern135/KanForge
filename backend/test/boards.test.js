@@ -4,6 +4,7 @@ const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, teardown, api, registerUser, auth } = require('./helpers');
 const Board = require('../src/apps/boards/models/Board');
+const Card = require('../src/apps/boards/models/Card');
 const Workspace = require('../src/core/models/Workspace');
 const Membership = require('../src/core/models/Membership');
 const { runInWorkspace } = require('../src/core/tenancy');
@@ -228,6 +229,28 @@ describe('boards, lists, cards', () => {
     // Bulk routes accept bodies over the normal 32 KB cap.
     const big = Array.from({ length: 60 }, (_, i) => ({ title: `Card ${i}`, description: 'x'.repeat(1000) }));
     await api().post(url).set(auth(alice.token)).send({ listId: list1, cards: big }).expect(201);
+  });
+
+  it('caps a board at 1000 cards, but still lets full boards move cards', async () => {
+    const { boardId, list1, list2 } = await makeBoard(alice.token, 'Full');
+    const { body: l3 } = await api().post(`/api/boards/${boardId}/lists`).set(auth(alice.token)).send({ title: 'Third' }).expect(201);
+    const board = await Board.findById(boardId).setOptions({ allWorkspaces: true }).lean();
+    // 998 cards straight into the database (499 per list, under the 500 list limit).
+    await runInWorkspace(board.workspace, () => Card.insertMany([list1, list2].flatMap((list) => Array.from({ length: 499 }, (_, i) => ({
+      board: boardId, list, title: `Filler ${i}`, position: (i + 1) * 1024, createdBy: alice.user.id,
+    })))));
+
+    await addCard(alice.token, boardId, l3.list.id, 'Card 999');
+    const last = await addCard(alice.token, boardId, l3.list.id, 'Card 1000');
+    const full = await api().post(`/api/boards/${boardId}/cards`).set(auth(alice.token)).send({ listId: l3.list.id, title: 'One too many' }).expect(400);
+    assert.equal(full.body.error.code, 'LIMIT');
+    assert.match(full.body.error.message, /at most 1000 cards/);
+    const bulk = await api().post(`/api/boards/${boardId}/cards/bulk`).set(auth(alice.token)).send({ listId: l3.list.id, cards: [{ title: 'Imported' }] }).expect(400);
+    assert.equal(bulk.body.error.code, 'LIMIT');
+    assert.equal(await runInWorkspace(board.workspace, async () => Card.countDocuments({ board: boardId }).exec()), 1000);
+
+    // Moving doesn't add cards, so it still works on a full board.
+    await api().put(`/api/boards/${boardId}/cards/${last.id}/move`).set(auth(alice.token)).send({ listId: list1, index: 0 }).expect(200);
   });
 
   it('rate limits every route, with a per-user budget for bulk imports', async () => {

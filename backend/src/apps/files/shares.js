@@ -10,6 +10,7 @@ const links = require('./links');
 const { requireRole } = require('./tree');
 const { body, ids, objectId, z } = require('../../core/middleware/validate');
 const AppError = require('../../core/utils/AppError');
+const { audit } = require('../../core/utils/audit');
 
 // Sharing, like Google Drive's "Share" dialog. Only an item's owner shares it:
 //   with people in the same workspace, who can view it or edit it, and/or
@@ -74,6 +75,7 @@ function sharesRouter() {
       { $set: { role: req.body.role }, $setOnInsert: { owner: node.owner, createdBy: req.user.id } },
       { upsert: true },
     );
+    audit(req, 'files.shared', { node: String(node._id), grantee: req.body.userId, role: req.body.role });
     res.status(201).json(await shareInfo(node));
   });
 
@@ -84,6 +86,7 @@ function sharesRouter() {
       { returnDocument: 'after' },
     ).lean();
     if (!share) throw AppError.notFound('Share not found');
+    audit(req, 'files.share_changed', { share: String(share._id), node: String(share.node), role: share.role });
     res.json({ share: { id: String(share._id), role: share.role } });
   });
 
@@ -92,6 +95,7 @@ function sharesRouter() {
   router.delete('/shares/:shareId', ids('shareId'), async (req, res) => {
     const r = await FileShare.deleteOne({ _id: req.params.shareId, $or: [{ owner: req.user.id }, { grantee: req.user.id }] });
     if (!r.deletedCount) throw AppError.notFound('Share not found');
+    audit(req, 'files.share_removed', { share: req.params.shareId });
     res.status(204).end();
   });
 
@@ -107,6 +111,7 @@ function sharesRouter() {
       { $setOnInsert: { owner: node.owner, role: 'view', createdBy: req.user.id } },
       { upsert: true },
     );
+    audit(req, 'files.link_enabled', { node: String(node._id) });
     res.status(201).json(await shareInfo(node));
   });
 
@@ -114,7 +119,8 @@ function sharesRouter() {
   // on again makes a new one.
   router.delete('/nodes/:nodeId/link', ids('nodeId'), async (req, res) => {
     const { node } = await requireRole(req, req.params.nodeId, 'owner');
-    await FileShare.deleteOne({ node: node._id, grantee: null });
+    const r = await FileShare.deleteOne({ node: node._id, grantee: null });
+    if (r.deletedCount) audit(req, 'files.link_disabled', { node: String(node._id) });
     res.json(await shareInfo(node));
   });
 

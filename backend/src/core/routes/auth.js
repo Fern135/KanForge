@@ -170,7 +170,19 @@ async function startSession(req, res, user, status = 200) {
 module.exports = function authRouter(limiters) {
   const router = express.Router();
 
-  router.post('/register', limiters.auth, body(registerSchema), async (req, res) => {
+  // Whether the sign-up page should offer to create an account.
+  router.get('/registration', (_req, res) => {
+    res.json({ open: config.allowRegistration });
+  });
+
+  const registrationOpen = (_req, _res, next) => {
+    if (!config.allowRegistration) {
+      throw AppError.forbidden('Sign-up is turned off on this server. Ask an administrator to add you.', 'REGISTRATION_CLOSED');
+    }
+    next();
+  };
+
+  router.post('/register', limiters.auth, registrationOpen, limiters.register, body(registerSchema), async (req, res) => {
     const { email: mail, name: displayName, password: pwd } = req.body;
     const localPart = mail.split('@')[0];
     if (localPart.length >= 4 && pwd.toLowerCase().includes(localPart)) {
@@ -181,7 +193,10 @@ module.exports = function authRouter(limiters) {
     try {
       user = await User.create({ email: mail, name: displayName, passwordHash });
     } catch (err) {
-      if (err?.code === 11000) throw AppError.conflict('An account with that email already exists', 'EMAIL_TAKEN');
+      if (err?.code === 11000) {
+        audit(req, 'signup.email_taken', { emailHash: emailHash(mail) });
+        throw AppError.conflict('An account with that email already exists', 'EMAIL_TAKEN');
+      }
       throw err;
     }
     audit(req, 'account.created', { user: String(user._id) });
@@ -241,7 +256,10 @@ module.exports = function authRouter(limiters) {
       clearPinDevice(res);
       throw AppError.unauthorized('This device isn\'t set up for PIN sign-in. Sign in with your password.', 'PIN_DEVICE_UNKNOWN');
     }
-    if (await lockout.isLocked(user.email, req.ip, 'pin', { knownDevice: isKnownDevice(req, user) })) {
+    // No known-device exemption here: PIN sign-in already needs this device's cookie,
+    // so strangers can't fail on purpose, and the exemption would only help whoever
+    // stole the cookies guess PINs from many addresses.
+    if (await lockout.isLocked(user.email, req.ip, 'pin')) {
       audit(req, 'signin.locked', { method: 'pin', user: String(user._id) });
       throw AppError.tooMany('Too many failed attempts. Try again in 15 minutes.', 'LOCKED');
     }

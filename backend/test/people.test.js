@@ -147,6 +147,16 @@ describe('people and app access', () => {
     await api().post('/api/auth/login').send({ email: otherAdmin.email, password: otherAdmin.password }).expect(200);
     await User.updateOne({ _id: otherAdmin.user.id }, { $set: { role: 'user' } });
     await api().post('/api/admin/people/aaaaaaaaaaaaaaaaaaaaaaaa/reset-password').set(auth(admin.token)).expect(404);
+
+    // Removing someone as admin doesn't open their account to a reset: not for a week.
+    const formerAdmin = await registerUser();
+    await makeAdmin(formerAdmin.email);
+    await api().delete(`/api/admin/admins/${formerAdmin.user.id}`).set(auth(admin.token)).expect(204);
+    const soon = await api().post(`/api/admin/people/${formerAdmin.user.id}/reset-password`).set(auth(admin.token)).expect(400);
+    assert.equal(soon.body.error.code, 'FORMER_ADMIN');
+    await api().post('/api/auth/login').send({ email: formerAdmin.email, password: formerAdmin.password }).expect(200);
+    await User.updateOne({ _id: formerAdmin.user.id }, { $set: { adminRemovedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) } });
+    await api().post(`/api/admin/people/${formerAdmin.user.id}/reset-password`).set(auth(admin.token)).expect(200);
   });
 
   it('disables an account: signed out everywhere, and no way back in until enabled', async () => {

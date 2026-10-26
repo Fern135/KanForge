@@ -12,6 +12,9 @@ const AppError = require('../../../core/utils/AppError');
 const s = require('../serialize');
 
 const MAX_CARDS_PER_LIST = 500;
+// Opening a board sends every card in one response (and caches it in Redis), so
+// the whole board is capped too: at most ~30 MB even with every field full.
+const MAX_CARDS_PER_BOARD = 1000;
 const MAX_CHECKLIST = 100;
 const MAX_IMPORT_CARDS = 100;
 
@@ -70,9 +73,15 @@ module.exports = function cardsRouter(limiters) {
   };
 
   const listFull = () => AppError.badRequest(`A list can hold at most ${MAX_CARDS_PER_LIST} cards`, 'LIMIT');
+  const boardFull = () => AppError.badRequest(`A board can hold at most ${MAX_CARDS_PER_BOARD} cards. Delete some or start a new board.`, 'LIMIT');
+  const boardCards = (boardId) => Card.countDocuments({ board: boardId });
   // Counted again after a write: requests running at the same moment can all pass
-  // the check before it. Returns true when the list went over, so the caller undoes.
-  const overfull = async (listId) => (await Card.countDocuments({ list: listId })) > MAX_CARDS_PER_LIST;
+  // the check before it. Returns the error when the list or board went over, so the caller undoes.
+  const overfull = async (listId, boardId) => {
+    if ((await Card.countDocuments({ list: listId })) > MAX_CARDS_PER_LIST) return listFull();
+    if ((await boardCards(boardId)) > MAX_CARDS_PER_BOARD) return boardFull();
+    return null;
+  };
 
   const done = async (req, res, card, status = 200) => {
     await cache.invalidateBoard(req.board._id);
@@ -85,6 +94,7 @@ module.exports = function cardsRouter(limiters) {
     if ((await Card.countDocuments({ list: listId })) >= MAX_CARDS_PER_LIST) {
       throw AppError.badRequest('Card limit reached for this list', 'LIMIT');
     }
+    if ((await boardCards(req.board._id)) >= MAX_CARDS_PER_BOARD) throw boardFull();
     const position = await positionAt(Card, { list: listId }, Number.MAX_SAFE_INTEGER);
     const card = await Card.create({
       board: req.board._id,
@@ -93,9 +103,10 @@ module.exports = function cardsRouter(limiters) {
       position,
       createdBy: req.user.id,
     });
-    if (await overfull(listId)) {
+    const over = await overfull(listId, req.board._id);
+    if (over) {
       await Card.deleteOne({ _id: card._id });
-      throw listFull();
+      throw over;
     }
     await done(req, res, card.toObject(), 201);
   });
@@ -107,6 +118,7 @@ module.exports = function cardsRouter(limiters) {
     if ((await Card.countDocuments({ list: listId })) + cards.length > MAX_CARDS_PER_LIST) {
       throw AppError.badRequest(`A list can hold at most ${MAX_CARDS_PER_LIST} cards`, 'LIMIT');
     }
+    if ((await boardCards(req.board._id)) + cards.length > MAX_CARDS_PER_BOARD) throw boardFull();
     const start = await positionAt(Card, { list: listId }, Number.MAX_SAFE_INTEGER);
     const docs = cards.map((c, i) => ({
       ...c,
@@ -119,9 +131,10 @@ module.exports = function cardsRouter(limiters) {
       createdBy: req.user.id,
     }));
     const created = await Card.insertMany(docs, { ordered: true });
-    if (await overfull(listId)) {
+    const over = await overfull(listId, req.board._id);
+    if (over) {
       await Card.deleteMany({ board: req.board._id, _id: trusted({ $in: created.map((c) => c._id) }) });
-      throw listFull();
+      throw over;
     }
     await cache.invalidateBoard(req.board._id);
     res.status(201).json({ cards: created.map((c) => s.card(c.toObject())) });
@@ -151,7 +164,8 @@ module.exports = function cardsRouter(limiters) {
     }
     const position = await positionAt(Card, { list: listId }, req.body.index, req.card._id);
     const card = await Card.findByIdAndUpdate(req.card._id, { $set: { list: listId, position } }, { returnDocument: 'after' }).lean();
-    if (listId !== String(req.card.list) && (await overfull(listId))) {
+    // A move stays on the same board, so only the destination list can go over.
+    if (listId !== String(req.card.list) && (await Card.countDocuments({ list: listId })) > MAX_CARDS_PER_LIST) {
       await Card.updateOne({ _id: req.card._id }, { $set: { list: req.card.list, position: req.card.position } });
       throw listFull();
     }

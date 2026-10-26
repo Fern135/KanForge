@@ -25,6 +25,10 @@ const schema = z.object({
   // The plan new workspaces start on. Self-hosted installs get every app with no
   // limits. The hosted service sets this to "standard".
   DEFAULT_PLAN: z.enum(PLAN_IDS).default('self-hosted'),
+  // Whether anyone who can reach the server can create an account. Off by default:
+  // a public server would otherwise let strangers sign up and fill its storage.
+  // Platform admins add people from the People page either way.
+  ALLOW_REGISTRATION: bool.default(false),
   // Where the Files app keeps file contents: any S3-compatible object store.
   // docker-compose runs Garage for this on the same machine (nothing to pay for).
   // A hosted provider (Backblaze B2, Cloudflare R2, AWS S3...) works by pointing
@@ -80,6 +84,7 @@ module.exports = Object.freeze({
   // A self-hosted install (not the hosted service): platform admins manage its
   // people and what each of them can use.
   selfHosted: env.DEFAULT_PLAN === 'self-hosted',
+  allowRegistration: env.ALLOW_REGISTRATION,
   // Object storage for the Files app (see the S3_* settings above). null when not configured.
   storage: env.S3_BUCKET && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY
     ? Object.freeze({

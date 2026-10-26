@@ -23,6 +23,10 @@ const { audit } = require('../utils/audit');
 const MAX_WORKSPACES_LISTED = 500;
 const MAX_PEOPLE_LISTED = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+// After someone stops being a platform admin, their password can't be reset by
+// another admin for this long: otherwise removing their role and resetting it
+// would let one admin sign in as another.
+const FORMER_ADMIN_RESET_DAYS = 7;
 
 const workspaceSchema = z
   .strictObject({ plan: z.enum(PAID_PLAN_IDS) });
@@ -291,6 +295,12 @@ module.exports = function adminRouter({ limiters, apps }) {
   router.post('/people/:userId/reset-password', selfHostedOnly, limiters.sensitive, requireRecentAuth, ids('userId'), async (req, res) => {
     if (req.params.userId === req.user.id) throw AppError.badRequest('Change your own password from your account page', 'OWN_ACCOUNT');
     const user = await findPerson(req);
+    if (user.adminRemovedAt && Date.now() - user.adminRemovedAt.getTime() < FORMER_ADMIN_RESET_DAYS * DAY_MS) {
+      throw AppError.badRequest(
+        `They were a platform admin until recently. Their password can be reset from ${new Date(user.adminRemovedAt.getTime() + FORMER_ADMIN_RESET_DAYS * DAY_MS).toISOString().slice(0, 10)}, or they can change it themselves.`,
+        'FORMER_ADMIN',
+      );
+    }
     const password = temporaryPassword();
     await User.updateOne(
       { _id: user._id },
@@ -319,7 +329,7 @@ module.exports = function adminRouter({ limiters, apps }) {
   });
 
   router.delete('/admins/:userId', limiters.sensitive, requireRecentAuth, ids('userId'), async (req, res) => {
-    const user = await User.findOneAndUpdate({ _id: req.params.userId, role: 'admin' }, { $set: { role: 'user' } }).select('_id').lean();
+    const user = await User.findOneAndUpdate({ _id: req.params.userId, role: 'admin' }, { $set: { role: 'user', adminRemovedAt: new Date() } }).select('_id').lean();
     if (!user) throw AppError.notFound('Admin not found');
     // Never leave the instance without an admin. Checking after the write (and
     // undoing it) stays correct when two admins remove each other at once.

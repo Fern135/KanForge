@@ -26,6 +26,7 @@ const migrations = [
   require('../migrations/20261008000001-session-devices'),
   require('../migrations/20261009000001-pin-device-browser'),
   require('../migrations/20261010000001-files'),
+  require('../migrations/20261026000001-admin-removed-at'),
 ];
 
 if (!config.isTest || !new URL(config.mongoUri).pathname.endsWith('_test')) {
@@ -86,7 +87,10 @@ async function registerUser(overrides = {}, { joinTestWorkspace = true } = {}) {
     password: 'correct horse battery staple',
     ...overrides,
   };
-  const res = await api().post('/api/auth/register').send(creds).expect(201);
+  // Each test account signs up from its own address, like real people do, so the
+  // per-address sign-up limit (5 an hour) doesn't stop the suite.
+  const ip = `10.${(counter >> 16) & 255}.${(counter >> 8) & 255}.${counter & 255}`;
+  const res = await api().post('/api/auth/register').set('X-Forwarded-For', ip).send(creds).expect(201);
   if (joinTestWorkspace) await Membership.create({ workspace: testWorkspaceId, user: res.body.user.id, role: 'member' });
   return { ...creds, token: res.body.accessToken, user: res.body.user, cookies: cookiesFrom(res), res };
 }

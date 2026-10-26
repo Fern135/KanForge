@@ -39,12 +39,14 @@ function createApp() {
     helmet({
       contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
       crossOriginResourcePolicy: { policy: 'same-origin' },
-      strictTransportSecurity: { maxAge: 63072000, includeSubDomains: true, preload: true },
+      // Like nginx (security-headers.conf): this server only, not its whole domain.
+      strictTransportSecurity: { maxAge: 63072000, includeSubDomains: false, preload: false },
     }),
   );
   app.use(
     pinoHttp({
       logger,
+      serializers: { req: (req) => ({ ...req, url: logger.hideTokens(req.url) }) },
       genReqId: (req, res) => {
         const id = crypto.randomUUID();
         res.setHeader('X-Request-Id', id);
