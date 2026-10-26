@@ -40,6 +40,15 @@ describe('auth', () => {
     assert.equal(res.status, 409);
   });
 
+  it('allows 5 sign-ups an hour from one address', async () => {
+    const signUp = (i) => api().post('/api/auth/register').set('X-Forwarded-For', '192.0.2.50')
+      .send({ email: `burst${i}-${Date.now()}@test.dev`, name: 'Burst', password: 'correct horse battery staple' });
+    for (let i = 0; i < 5; i += 1) await signUp(i).expect(201);
+    const res = await signUp(5).expect(429);
+    assert.equal(res.body.error.code, 'RATE_LIMITED');
+    await flushRedis();
+  });
+
   it('blocks NoSQL operator injection in login', async () => {
     await api().post('/api/auth/login').send({ email: { $gt: '' }, password: { $gt: '' } }).expect(400);
   });
@@ -269,6 +278,27 @@ describe('auth', () => {
       await api().post('/api/auth/login').send({ email: u.email, password: u.password }).expect(200);
       await flushRedis();
     });
+
+    it('locks the whole account after 10 PIN failures, even on the remembered device from many addresses', async () => {
+      const u = await registerUser();
+      const pd = await enablePin(u);
+      // Every cookie the remembered browser has: PIN device, known device and browser id.
+      const jar = [`pd=${pd}`, `kd=${u.cookies.kd}`, `bd=${u.cookies.bd}`];
+      const attempt = (ip, pin) => api().post('/api/auth/login-pin').set('X-Forwarded-For', ip).set('Cookie', jar).send({ pin });
+      // 2 addresses × 5 failures: each address locks, and together they reach the account-wide 10.
+      for (let ip = 1; ip <= 2; ip += 1) {
+        for (let i = 0; i < 5; i += 1) await attempt(`203.0.113.${ip}`, '000001').expect(401);
+      }
+      const res = await attempt('203.0.113.99', PIN);
+      assert.equal(res.status, 429);
+      assert.equal(res.body.error.code, 'LOCKED');
+      await flushRedis();
+    });
+  });
+
+  it('asks for HTTPS on this server only, not every subdomain', async () => {
+    const res = await api().get('/api/health').expect(200);
+    assert.equal(res.headers['strict-transport-security'], 'max-age=63072000');
   });
 
   it('rejects non-JSON bodies', async () => {

@@ -5,6 +5,8 @@ const { pipeline } = require('node:stream/promises');
 const { trusted } = require('mongoose');
 const Workspace = require('../../core/models/Workspace');
 const User = require('../../core/models/User');
+const Membership = require('../../core/models/Membership');
+const { accessTo } = require('../../core/access');
 const { planIncludesApp } = require('../../core/plans');
 const { runInWorkspace } = require('../../core/tenancy');
 const { limiter } = require('../../core/middleware/rateLimit');
@@ -16,6 +18,7 @@ const limits = require('./limits');
 const links = require('./links');
 const storage = require('./storage');
 const { sendFile } = require('./download');
+const { roleOf } = require('./tree');
 const { iso } = require('./serialize');
 
 // Routes that work without signing in, mounted at /api/public/files:
@@ -53,8 +56,9 @@ const publicItem = (n) => ({
 });
 
 // The shared item behind a public link, checked all the way: the token's
-// signature, the share still existing, public links still allowed, and the app
-// still on in its workspace. Runs `fn(root, share)` inside that workspace.
+// signature, the share still existing, public links still allowed, the app
+// still on in its workspace, and its owner's account not disabled. Runs
+// `fn(root, owner)` inside that workspace (owner: { name }).
 async function withLink(token, fn) {
   const shareId = links.parseShareToken(token);
   if (!shareId) throw gone();
@@ -63,8 +67,24 @@ async function withLink(token, fn) {
   return runInWorkspace(share.workspace, async () => {
     const root = await FileNode.findOne({ _id: share.node, trashedAt: null, status: trusted({ $ne: 'uploading' }) }).lean();
     if (!root) throw gone();
-    return fn(root, share);
+    // A disabled account's links stop working (and come back if it's enabled again).
+    const owner = await User.findById(root.owner).select('name disabled').lean();
+    if (!owner || owner.disabled) throw gone();
+    return fn(root, owner);
   });
+}
+
+// Whether the person a download link was made for can still open `node`: their
+// account is active, they're still in the workspace, they may use Files, and they
+// can still see the item. Checked on every use (each video seek is one), so
+// removing access takes effect at once rather than when the link expires.
+async function stillAllowed(userId, workspaceId, node) {
+  const [user, member] = await Promise.all([
+    User.findById(userId).select('role access disabled').lean(),
+    Membership.exists({ workspace: workspaceId, user: userId }),
+  ]);
+  if (!user || user.disabled || !member || accessTo(user, 'files') === 'none') return false;
+  return Boolean(await roleOf(userId, node));
 }
 
 // An item inside the shared one (or the shared item itself), never outside it.
@@ -94,7 +114,7 @@ function publicRouter() {
     if (!payload || !(await filesAvailable(payload.w))) throw AppError.notFound('This download link has expired. Open the file again.', 'LINK_EXPIRED');
     await runInWorkspace(payload.w, async () => {
       const node = await FileNode.findOne({ _id: payload.n, kind: 'file', status: 'ready', trashedAt: null }).lean();
-      if (!node) throw AppError.notFound('File not found');
+      if (!node || !(await stillAllowed(payload.u, payload.w, node))) throw AppError.notFound('File not found');
       await sendFile(req, res, node, { inline: payload.i === 1 });
     });
   });
@@ -127,9 +147,8 @@ function publicRouter() {
 
   router.get('/links/:token', async (req, res) => {
     const { folder } = linkQuery.parse(req.query);
-    await withLink(req.params.token, async (root) => {
-      const owner = await User.findById(root.owner).select('name').lean();
-      const out = { item: publicItem(root), ownerName: owner?.name ?? null };
+    await withLink(req.params.token, async (root, owner) => {
+      const out = { item: publicItem(root), ownerName: owner.name };
       if (root.kind === 'folder') {
         const current = folder ? await findWithin(root, folder, 'folder') : root;
         // Breadcrumbs from the shared folder down to the one being looked at.

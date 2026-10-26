@@ -220,7 +220,7 @@ function nodesRouter(limiters) {
     storage.assertConfigured();
     const { node } = await requireRole(req, req.params.nodeId, 'view');
     if (node.kind !== 'file' || node.trashedAt) throw AppError.badRequest('Only files can be downloaded', 'NOT_A_FILE');
-    const token = links.downloadToken({ w: req.workspace.id, n: String(node._id), i: req.body.inline ? 1 : 0 });
+    const token = links.downloadToken({ w: req.workspace.id, n: String(node._id), u: req.user.id, i: req.body.inline ? 1 : 0 });
     res.json({ url: `/api/public/files/download/${token}`, expiresInSeconds: links.DOWNLOAD_TTL_SECONDS });
   });
 

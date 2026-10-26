@@ -53,7 +53,8 @@ function parseShareToken(token) {
 // enough that a copied link soon stops working.
 const DOWNLOAD_TTL_SECONDS = 60 * 60;
 
-// payload: { w: workspace id, n: node id, i: 1 to show in the browser instead of saving }
+// payload: { w: workspace id, n: node id, u: who it was made for (their access is
+// checked again on every use), i: 1 to show in the browser instead of saving }
 function downloadToken(payload) {
   const body = Buffer.from(JSON.stringify({ ...payload, e: Math.floor(Date.now() / 1000) + DOWNLOAD_TTL_SECONDS })).toString('base64url');
   return `${body}.${mac(DOWNLOAD_KEY, body)}`;
@@ -71,7 +72,7 @@ function parseDownloadToken(token) {
     return null;
   }
   if (!payload || typeof payload.e !== 'number' || payload.e < Date.now() / 1000) return null;
-  if (!/^[a-f0-9]{24}$/.test(payload.w) || !/^[a-f0-9]{24}$/.test(payload.n)) return null;
+  if (![payload.w, payload.n, payload.u].every((id) => /^[a-f0-9]{24}$/.test(id))) return null;
   return payload;
 }
 

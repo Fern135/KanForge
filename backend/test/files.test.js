@@ -7,6 +7,7 @@ const FileNode = require('../src/apps/files/models/FileNode');
 const FileGarbage = require('../src/apps/files/models/FileGarbage');
 const FilesSettings = require('../src/apps/files/models/FilesSettings');
 const FileQuota = require('../src/apps/files/models/FileQuota');
+const User = require('../src/core/models/User');
 const storage = require('../src/apps/files/storage');
 const sweeper = require('../src/apps/files/sweeper');
 const { runInWorkspace } = require('../src/core/tenancy');
@@ -226,10 +227,17 @@ describe('files', { skip: !storage.configured() && 'no object storage configured
     const res = await as(alice).post(`/api/files/nodes/${team.id}/shares`).send({ userId: outsider.user.id, role: 'view' }).expect(400);
     assert.equal(res.body.error.code, 'NOT_A_MEMBER');
 
-    // Removing the share takes access away at once.
+    // Removing the share takes access away at once, including through a download
+    // link he was given before (it's checked again on every use).
+    const { url } = (await as(bob).post(`/api/files/nodes/${doc.id}/download`).send({}).expect(200)).body;
+    await fetchRaw(url).expect(200);
     const { people } = (await as(alice).get(`/api/files/nodes/${team.id}/shares`).expect(200)).body;
     await as(alice).del(`/api/files/shares/${people[0].id}`).expect(204);
     await as(bob).get(`/api/files/browse?folder=${team.id}`).expect(404);
+    await fetchRaw(url).expect(404);
+    // Alice's own link keeps working.
+    const own = (await as(alice).post(`/api/files/nodes/${doc.id}/download`).send({}).expect(200)).body.url;
+    await fetchRaw(own).expect(200);
   });
 
   it('public links: anyone can view what was shared, and nothing outside it', async () => {
@@ -253,6 +261,13 @@ describe('files', { skip: !storage.configured() && 'no object storage configured
     await api().get(`/api/public/files/links/${token}/download/${secret.id}`).expect(404);
     // A tampered token doesn't work.
     await api().get(`/api/public/files/links/${token.slice(0, -1)}${token.endsWith('A') ? 'B' : 'A'}`).expect(404);
+
+    // The owner's account disabled: their links stop working, and come back once it's enabled.
+    await User.updateOne({ _id: alice.user.id }, { $set: { disabled: true } });
+    await api().get(`/api/public/files/links/${token}`).expect(404);
+    await api().get(`/api/public/files/links/${token}/download/${file.id}`).expect(404);
+    await User.updateOne({ _id: alice.user.id }, { $unset: { disabled: '' } });
+    await api().get(`/api/public/files/links/${token}`).expect(200);
 
     // Turned off on this server: every link stops working.
     await FilesSettings.updateOne({ _id: 'instance' }, { $set: { linkSharing: false } }, { upsert: true });

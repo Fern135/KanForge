@@ -21,6 +21,12 @@ export default function Login() {
   const [show, setShow] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Whether this server lets people create their own account.
+  const [canRegister, setCanRegister] = useState(false);
+
+  useEffect(() => {
+    authApi.registration().then((d) => setCanRegister(Boolean(d.open))).catch(() => {});
+  }, []);
 
   useEffect(() => {
     authApi.pinDevice()
@@ -137,9 +143,11 @@ export default function Login() {
             <FontAwesomeIcon icon={faKey} className="me-2" />Use security PIN
           </button>
         )}
-        <p className="text-center text-muted mt-4 mb-0">
-          New here? <Link to={`/register${search}`} className="fw-semibold">Create an account</Link>
-        </p>
+        {canRegister && (
+          <p className="text-center text-muted mt-4 mb-0">
+            New here? <Link to={`/register${search}`} className="fw-semibold">Create an account</Link>
+          </p>
+        )}
       </form>
     </AuthLayout>
   );

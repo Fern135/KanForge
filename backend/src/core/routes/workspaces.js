@@ -74,6 +74,7 @@ function currentWorkspaceRouter({ limiters, appState }) {
 
   router.patch('/', limiters.sensitive, requireWorkspaceAdmin, body(renameSchema), async (req, res) => {
     await Workspace.updateOne({ _id: ws(req) }, { $set: { name: req.body.name } });
+    audit(req, 'workspace.renamed');
     res.json({ workspace: workspaces.summary({ _id: ws(req), ...req.workspace, name: req.body.name }, req.workspaceRole) });
   });
 
@@ -152,6 +153,7 @@ function currentWorkspaceRouter({ limiters, appState }) {
       throw AppError.forbidden(`${app.name} isn't included in this workspace's plan`, 'PLAN_REQUIRED');
     }
     await appState.setEnabled(req.workspace, app.id, req.body.enabled);
+    audit(req, 'workspace.app_toggled', { app: app.id, enabled: req.body.enabled });
     res.json({ apps: appState.list(req.workspace, req.user).map(({ id, name: appName, included, enabled, access }) => ({ id, name: appName, included, enabled, access })) });
   });
 

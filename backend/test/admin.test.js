@@ -120,8 +120,9 @@ describe('platform admin', () => {
     await api().delete('/api/admin/admins/bad-id').set(auth(admin.token)).expect(400);
   });
 
-  it('makes admins from the command line only for existing accounts', async () => {
-    await assert.rejects(() => makeAdmin('nobody@test.dev'), /No account uses nobody@test.dev/);
+  // Creating an account when none exists is covered in registration.test.js.
+  it('makes admins from the command line', async () => {
+    await assert.rejects(() => makeAdmin('not-an-email'), /isn't a valid email address/);
     await assert.rejects(() => makeAdmin(''), /Usage/);
     const later = await registerUser();
     const made = await makeAdmin(`  ${later.email.toUpperCase()} `);

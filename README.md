@@ -130,9 +130,10 @@
 - Open PowerPoint (.pptx) files: text and its formatting, shapes, pictures, tables, groups, backgrounds, hidden slides and speaker notes (charts and SmartArt are left out). Save as PowerPoint, with charts as real PowerPoint charts, or print or save as PDF with one slide per page. Saves automatically, and if the same presentation changed elsewhere, you choose which version to keep
 - Up to 300 slides per presentation and 150 items per slide
 **Accounts**
-- Email and password sign-up and sign-in. You stay signed in for 14 days without activity
+- Email and password sign-in. You stay signed in for 14 days without activity
+- Sign-up is off by default, so strangers can't create accounts on your server: platform admins add people from the People page. Set `ALLOW_REGISTRATION=true` in `.env` to let anyone create an account
 - Edit your profile name, change your password and "sign out everywhere"
-- Signing up never makes anyone platform admin. On a new install, create your account, then run `make admin email=you@example.com` (or `./run.sh admin you@example.com`) on the server. Platform admins run the whole server (plans and other platform admins) but only see workspace names and seat counts, not what's inside. There's always at least one
+- Signing up never makes anyone platform admin. On a new install, run `make admin email=you@example.com` (or `./run.sh admin you@example.com`) on the server: it creates your account with a temporary password (or promotes the account if it already exists). Platform admins run the whole server (plans and other platform admins) but only see workspace names and seat counts, not what's inside. There's always at least one
 - Optional security PIN (6 to 8 digits), off by default. Once added under Account & security, you sign in with just the PIN, without typing your email. It works on devices where you've turned it on or signed in with your password since; a new device asks for the password once
 - Account & security lists every device you're signed in on (browser, system, last activity). Sign out any one of them, or all at once
 - Ask for your account to be deleted from Account & security. Platform admins see the request and carry it out; until then you can withdraw it
@@ -179,9 +180,7 @@ On the first run, the launcher also does this automatically:
 
 ### 3. Open it
 
-Go to **https://localhost:8443** and create an account (opening the server's address goes straight to the app).
-
-Then make that account the platform admin (the super admin who runs the server):
+Create your account as the platform admin (the super admin who runs the server). It prints a temporary password; sign in with it at **https://localhost:8443** and choose your own:
 
 | | macOS / Linux | Windows (PowerShell or cmd) |
 | --- | --- | --- |
@@ -205,7 +204,7 @@ On macOS and Linux, use `./run.sh <command>`. On Windows, use `.\run <command>`.
 | `down` | Stop everything. Your data is kept |
 | `status` | Show which containers are running and healthy |
 | `logs [service]` | Follow the logs, for example `logs api`. Press Ctrl+C to stop |
-| `admin <email>` | Make an existing account the super admin (platform admin), for example `admin you@example.com`. Sign up in the app first. With make: `make admin email=you@example.com` |
+| `admin <email>` | Make an account the super admin (platform admin), for example `admin you@example.com`. Creates it with a temporary password (printed once) if no account uses that email. With make: `make admin email=you@example.com` |
 | `seed` | Add a demo user and sample board (prints the login) |
 | `demo [remove]` | Fill the dev database with made-up accounts and workspaces for the super admin dashboard, or remove them again. They can't sign in |
 | `migrate [up\|down\|status]` | Apply, roll back or list database migrations |
@@ -249,6 +248,7 @@ Settings live in `.env`, which is created on the first run. It's git-ignored and
 | `ACCESS_TOKEN_TTL_SECONDS` | `600` | Access token lifetime |
 | `REFRESH_TOKEN_TTL_DAYS` | `14` | How long you stay signed in without activity |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
+| `ALLOW_REGISTRATION` | `false` | Whether anyone can create an account from the sign-in page. Off: platform admins add people from the People page |
 | `DEFAULT_PLAN` | `self-hosted` | Plan for new workspaces: `self-hosted` (every app, no limits), `standard` or `plus`. A hosted service uses `standard` |
 | `COMPOSE_PROJECT_NAME` | `kanforge` | Prefix for container and volume names |
 | `MONGO_*`, `REDIS_PASSWORD`, `JWT_ACCESS_SECRET` | random | Generated secrets. Don't reuse them anywhere else |
@@ -267,10 +267,10 @@ A Kanforge server opens straight into the app. To put pages of your own at `/` (
 ## Deploying to a server
 
 1. Point a domain at the server and open ports 80 and 443.
-2. In `.env`, set `APP_ORIGIN=https://boards.example.com`, `HTTP_PORT=80` and `HTTPS_PORT=443`. Running it as a paid hosted service? Also add `DEFAULT_PLAN=standard`, or every new workspace starts on the free Self-hosted plan with every app.
+2. In `.env`, set `APP_ORIGIN=https://boards.example.com`, `HTTP_PORT=80` and `HTTPS_PORT=443`. Running it as a paid hosted service? Also add `DEFAULT_PLAN=standard`, or every new workspace starts on the free Self-hosted plan with every app, and `ALLOW_REGISTRATION=true` so customers can sign up.
 3. Replace `docker/nginx/certs/tls.crt` and `tls.key` with a real certificate, for example from Let's Encrypt. `tls.crt` should be the full chain. Then make the private key readable only by you and nginx in the container (group 101): `sudo chgrp 101 docker/nginx/certs/tls.key && sudo chmod 640 docker/nginx/certs/tls.key`
 4. Run `./run.sh prod`. Containers restart automatically after a reboot.
-   Create your account, then run `./run.sh admin you@example.com` to make it the platform admin.
+   Run `./run.sh admin you@example.com` to create your platform admin account, then sign in with the temporary password it prints.
 5. Schedule `make backup` (for example with a daily cron job) and copy the dumps somewhere safe and encrypted.
 6. Run `make audit` from time to time, and pull and restart to pick up updates.
 

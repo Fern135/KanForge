@@ -53,6 +53,15 @@ const createLimiters = () => ({
     limit: 30,
     message: 'Too many authentication attempts. Try again later.',
   }),
+  // Sign-up says when an email is already taken (there's no email to send a
+  // verification to instead), so it gets a tight budget of its own: probing for
+  // accounts this way is slow, and each hit is audit-logged.
+  register: limiter({
+    prefix: 'register',
+    windowMs: 60 * 60_000,
+    limit: 5,
+    message: 'Too many sign-ups from this address. Try again in an hour.',
+  }),
   refresh: limiter({
     prefix: 'refresh',
     windowMs: 60_000,

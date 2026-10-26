@@ -28,6 +28,9 @@ const userSchema = new Schema(
     mustChangePassword: { type: Boolean },
     // Set by a platform admin: the account can't sign in until it's enabled again.
     disabled: { type: Boolean },
+    // When they last stopped being a platform admin (see routes/admin.js: their
+    // password can't be reset by another admin for a while after).
+    adminRemovedAt: { type: Date },
     // When the person asked a platform admin to delete the account (unset: no request).
     deletionRequestedAt: { type: Date },
     // When the account last used the app (updated at most once an hour), for the

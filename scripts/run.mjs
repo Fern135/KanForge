@@ -113,6 +113,10 @@ JWT_ACCESS_SECRET=${rand(64)}
 ACCESS_TOKEN_TTL_SECONDS=600
 REFRESH_TOKEN_TTL_DAYS=14
 LOG_LEVEL=info
+
+# Whether anyone who can reach the server can create an account. Off by default;
+# platform admins add people from the People page. true opens sign-up to everyone.
+# ALLOW_REGISTRATION=false
 ${storageEnv()}`;
   writeFileSync('.env', content, { mode: 0o600 });
   console.log('Created .env with freshly generated secrets (mode 600).');
